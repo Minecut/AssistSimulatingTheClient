@@ -1,0 +1,15 @@
+{
+  "enabled": true,
+  "edgeOffset": 0.08,
+  "releaseMargin": 0.06,
+  "keepSneakWhileIdle": true,
+  "sneakDelayMs": 0,
+  "releaseDelayMs": 40,
+  "randomizeDelay": true,
+  "onlyWhileBridging": false,
+  "showHud": true,
+  "safePadEnabled": false,
+  "safePadCooldownTicks": 2,
+  "safePadFallRescue": true,
+  "safePadRescueMinFallSpeed": 0.08
+}

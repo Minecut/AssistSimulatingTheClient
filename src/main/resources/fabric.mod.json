@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "eagle",
+  "version": "${version}",
+  "name": "Eagle",
+  "description": "Legit Scaffold / Eagle. Predicts whether the block under your feet is about to run out and presses sneak for you, using nothing but the vanilla sneak key state. Client side only.",
+  "authors": [
+    "dmod"
+  ],
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.dmod.eagle.EagleClient"
+    ]
+  },
+  "mixins": [
+    "eagle.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "fabric-api": "*",
+    "minecraft": "~1.21.4",
+    "java": ">=21"
+  }
+}
