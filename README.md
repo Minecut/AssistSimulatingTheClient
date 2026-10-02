@@ -1,4 +1,5 @@
-# Eagle —— Fabric 客户端辅助套件
+# AssistSimulatingTheClient
+ —— Fabric 客户端辅助套件[AI生成]
 
 四个模块，各自独立开关：
 
