@@ -27,6 +27,7 @@ public class EagleClient implements ClientModInitializer {
     private static KeyBinding toggleKey;
     private static KeyBinding padToggleKey;
     private static KeyBinding aimToggleKey;
+    private static KeyBinding invChestToggleKey;
 
     @Override
     public void onInitializeClient() {
@@ -50,7 +51,14 @@ public class EagleClient implements ClientModInitializer {
                 GLFW.GLFW_KEY_R,
                 "category.eagle"));
 
+        invChestToggleKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.eagle.invchest",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_N,
+                "category.eagle"));
+
         ClientTickEvents.START_CLIENT_TICK.register(SafePadLogic::onStartTick);
+        ClientTickEvents.END_CLIENT_TICK.register(InvChestLogic::onEndTick);
         ClientTickEvents.END_CLIENT_TICK.register(this::onEndClientTick);
 
         HudLayerRegistrationCallback.EVENT.register(drawer -> drawer.addLayer(
@@ -58,7 +66,7 @@ public class EagleClient implements ClientModInitializer {
                         Identifier.of(MOD_ID, "hud"),
                         (DrawContext context, RenderTickCounter tickCounter) -> EagleHud.render(context))));
 
-        LOGGER.info("[Eagle] ready (V = eagle, B = safety pad, R = aim assist)");
+        LOGGER.info("[Eagle] ready (V = eagle, B = safety pad, R = aim assist, N = chest looter)");
     }
 
     private void onEndClientTick(MinecraftClient mc) {
@@ -84,6 +92,13 @@ public class EagleClient implements ClientModInitializer {
             AimAssistLogic.reset();
             changed = true;
             notify(mc, "AimAssist", cfg.aimEnabled);
+        }
+
+        while (invChestToggleKey.wasPressed()) {
+            cfg.invChestEnabled = !cfg.invChestEnabled;
+            InvChestLogic.reset();
+            changed = true;
+            notify(mc, "InvChest", cfg.invChestEnabled);
         }
 
         if (changed) {

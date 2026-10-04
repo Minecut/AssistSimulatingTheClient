@@ -1,13 +1,6 @@
-# AssistSimulatingTheClient
- —— Fabric 客户端辅助套件[AI生成]
+# Eagle —— Fabric 客户端辅助套件
 
- 免责声明
--------------------------------------
-1.此工具只用于生存辅助
-2.请勿在多人服务器使用,可能造成封禁风险,概不负责
--------------------------------------
-
-四个模块，各自独立开关：
+五个模块，各自独立开关：
 
 | 模块 | 行为 | 开关 | 默认 |
 | --- | --- | --- | --- |
@@ -15,15 +8,18 @@
 | **Eagle · 右键提速** | 长按右键时把放置节奏提到 6~9 CPS | 同 `V` | 开 |
 | **SafePad** | 快踩空时在脚下补一块方块，让你继续走 | `B` | **关** |
 | **AimAssist** | 往目标方向修正鼠标向量，镜头真的转过去 | `R` | **关** |
+| **InvChest** | 打开箱子后每 0.85 秒取一件，高级物品优先 | `N` | **关** |
+
+聊天框里的客户端指令（`.inv speed <秒>`）可以随时调 InvChest 的节奏，详见第四节。
 
 Eagle 只改输入记录和原版的放置冷却计数，**永远不动世界**；SafePad 会真的放置方块，
-AimAssist 会真的转动镜头，所以后两个默认关闭，需要你手动开。
+AimAssist 会真的转动镜头，InvChest 会真的取走箱子里的东西，所以后三个默认关闭，需要你手动开。
 
 SafePad 与 Eagle 同时开启时 **SafePad 优先**：它成功放下方块的那一 tick，Eagle 会让开，
 让你保持全速前进；一旦 SafePad 放不下去（手上没方块、够不着、被挡住），Eagle 立刻接管把你拦在边缘。
 这就是「兜底的兜底」。
 
-AimAssist 与前三个都无关，它是战斗模块，`enabled`（V 键）不影响它。
+AimAssist 和 InvChest 与前三个都无关，各自独立，`enabled`（V 键）不影响它们。
 
 * Minecraft **1.21.4** / Fabric Loader ≥ 0.16 / Fabric API / Java 21
 * 纯客户端（`"environment": "client"`），单机、局域网、服务器都能用
@@ -260,18 +256,112 @@ step  = 误差角度 × alpha;
 
 ---
 
-## 四、安装
+## 四、InvChest
 
-1. 装好 **Fabric Loader**（≥ 0.16）和一个 **1.21.4** 的档案
-2. 下载 **Fabric API**（1.21.4 版）放进 `mods`
-3. 把 `eagle-1.3.0.jar` 放进 `mods`
-4. 启动游戏，进世界后按 **V** 开关 Eagle，**B** 开关 SafePad，**R** 开关 AimAssist
+按 **N** 开关。开启后只要打开箱子（或木桶、末影箱、潜影盒、发射器、投掷器）就开始工作。
 
-左上角显示 `Eagle ON [sneak]  CPS ON [hold]  Pad OFF  Aim OFF` 之类的实时状态。
+### 1. 取物本身完全是原版交互
+
+没有伪造 `ClickSlotC2SPacket`。把一件物品从容器挪进背包，本来就是游戏会的操作：
+
+```java
+mc.interactionManager.clickSlot(handler.syncId, slot, 0, SlotActionType.QUICK_MOVE, player);
+```
+
+这正是玩家 shift + 左键点那一格时走的调用，服务端看到的是一次普通的容器交互，
+客户端的预测也照常同步。
+
+### 2. 等级评分
+
+难点全在**取什么**上。`InvChestLogic.tierOf()` 把物品打成 1~5 分：
+
+| 分 | 内容 |
+| --- | --- |
+| **5** | 下界合金全套、下界合金锭/块/残骸、鞘翅、不死图腾、附魔金苹果、下界之星、龙蛋、信标、潮涌核心、附魔书、**所有颜色的潜影盒** |
+| **4** | 钻石全套、钻石、绿宝石、三叉戟、弓、弩、末影水晶、重生锚、金苹果、经验瓶、末影珍珠/之眼、潜影壳 |
+| **3** | 铁全套、铁/金锭与块、盾牌、黑曜石、红石、青金石、石英、紫水晶碎片、各种箭、烈焰棒/粉、金胡萝卜、熟食 |
+| **2** | 皮革/锁链/金装备、石制工具、煤炭、皮革、线、羽毛、燧石、木棍、骨头、粘液球、火药、鸡蛋 |
+| **1** | 其余全部（泥土、圆石这类） |
+
+两个设计细节：
+
+* **原版稀有度是不够用的**。钻石和下界合金装备在 `Rarity` 里都是 `COMMON`，
+  所以真正重要的物品必须显式列表，剩下的才回落到稀有度。
+  实测：`NETHERITE_SWORD=5  DIAMOND_SWORD=4  IRON_SWORD=3  LEATHER_BOOTS=2  DIRT=1`。
+* **附魔会往上抬**：`tier = max(tier, 3) + 1`，所以一把附魔铁剑（3 → 4）会排在普通铁剑前面。
+* 潜影盒用的是 `instanceof ShulkerBoxBlock` 通配，不用把 17 种颜色列一遍。
+  实测 `SHULKER_BOX=5  LIME_SHULKER_BOX=5`。
+
+同分时取**堆叠数量大**的，因为一次点击搬走一整堆，64 个远比 1 个划算。
+
+### 3. 背包已有的就跳过
+
+开启 `invChestSkipExisting`（默认）时，容器里任何**玩家背包里已经有同种物品**的格子都会被跳过——
+比对的是 `Item` 本身，不比较数量、不比较 NBT。
+
+这样一箱圆石不会把那颗钻石淹掉。副手也算在内。
+
+### 4. 节奏
+
+一次点击之后等 `invChestDelayMs`（默认 **850 ms**）再取下一件，正好是需求里的 0.85 秒。
+
+另外，**刚打开容器时会先等满一个间隔**才动手，所以开箱的瞬间不会立刻飞出去一次点击。
+
+`invChestCloseWhenDone` 打开后，等到没有任何可取的物品时会自动关掉容器——
+同样要等满一个间隔，避免「一打开就关」的闪烁。
+
+### 5. 客户端指令
+
+在游戏聊天框里直接输入即可，**支持小数**：
+
+```
+.inv speed 0.85      间隔 0.85 秒/件（约 1.176 件/秒）
+.inv speed 0.5       半秒一件
+.inv speed 1.25      1.25 秒一件
+.inv                 查看当前设置和用法
+```
+
+指令**只在本机处理，不会发给服务器**。拦截点是
+`ClientPlayNetworkHandler#sendChatMessage(String)`——所有普通聊天消息都从这里出去
+（斜杠指令走的是隔壁的 `sendChatCommand`，我们完全不碰）：
+
+```java
+@Inject(method = "sendChatMessage", at = @At("HEAD"), cancellable = true)
+private void eagle$clientCommand(String content, CallbackInfo ci) {
+    if (EagleCommands.handle(MinecraftClient.getInstance(), content)) {
+        ci.cancel();
+    }
+}
+```
+
+`ci.cancel()` 一按，这段文字就**根本没有变成数据包**。回显走的是
+`ChatHud#addMessage(Text)`，那是纯客户端调用，同样不发任何东西。
+
+两个行为上的细节：
+
+* **只吞自己的指令**。`.inv` 开头的会被拦下，但 `.hello` 不是我们的，会照常发到服务器，
+  而不是凭空消失。指令词表在 `EagleCommands.ROOTS` 里。
+* **回显同时给出两种说法**（`0.85 秒/件` 和 `约 1.176 件/秒`），
+  这样数字的含义永远不会有歧义。
+
+解析用的是 `Double.parseDouble`，所以 `0.85` / `1` / `1.25` / `.5` 都行；
+非数字会报错并保持原值；超出允许范围（0.05 ~ 10 秒）会被钳制到边界并明确告诉你钳到了哪里。
 
 ---
 
-## 五、配置
+## 五、安装
+
+1. 装好 **Fabric Loader**（≥ 0.16）和一个 **1.21.4** 的档案
+2. 下载 **Fabric API**（1.21.4 版）放进 `mods`
+3. 把 `eagle-1.5.0.jar` 放进 `mods`
+4. 启动游戏，进世界后按 **V** 开关 Eagle，**B** 开关 SafePad，**R** 开关 AimAssist，**N** 开关 InvChest
+
+左上角显示 `Eagle ON [sneak]  CPS ON [hold]  Pad OFF  Aim OFF  Inv OFF` 之类的实时状态。
+聊天框里输入 `.inv speed 0.85` 可以直接调 InvChest 的取物间隔。
+
+---
+
+## 六、配置
 
 首次启动会生成 `.minecraft/config/eagle.json`：
 
@@ -310,7 +400,13 @@ step  = 误差角度 × alpha;
   "aimStrafeIncrease": true,
   "aimSensitivitySync": true,
   "aimJitterDegrees": 0.6,
-  "aimWhitelist": []
+  "aimWhitelist": [],
+
+  "invChestEnabled": false,
+  "invChestDelayMs": 850,
+  "invChestSkipExisting": true,
+  "invChestMinTier": 1,
+  "invChestCloseWhenDone": false
 }
 ```
 
@@ -365,6 +461,16 @@ step  = 误差角度 × alpha;
 | `aimJitterDegrees` | `0.6` | 瞄准点随机漂移的角半径（度）。设为 0 就是完全精准 |
 | `aimWhitelist` | `[]` | 玩家名白名单，大小写不敏感，名单里的人不会被瞄 |
 
+### InvChest
+
+| 字段 | 默认 | 说明 |
+| --- | --- | --- |
+| `invChestEnabled` | `false` | InvChest 总开关，N 键切换。独立模块，不受 `enabled` 约束 |
+| `invChestDelayMs` | `850` | 两次取物之间的间隔（毫秒），钳制在 50 ~ 10000。可用 `.inv speed <秒>` 在线修改 |
+| `invChestSkipExisting` | `true` | 背包里已经有同种物品就跳过 |
+| `invChestMinTier` | `1` | 最低取用等级 1~5。调到 2 就会把泥土圆石这类垃圾留下 |
+| `invChestCloseWhenDone` | `false` | 没有可取的物品时自动关闭容器 |
+
 ### 关于安全余量
 
 原版行走 4.317 格/秒 = **每刻 0.216 格**，检测每刻做一次。
@@ -381,7 +487,7 @@ SafePad 就是吃这个窗口的——所以它每次都能赶在坠落之前把
 
 ---
 
-## 六、行为边界
+## 七、行为边界
 
 **会生效**：站在地面正常行走、搭桥、跑搭、倒退搭、侧向搭。
 
@@ -402,26 +508,31 @@ SafePad 就是吃这个窗口的——所以它每次都能赶在坠落之前把
 你的鼠标输入始终是叠加的基底，辅助只是那一点「磁吸」。关掉它的方式是把
 `aimHorizontalSpeed` / `aimVerticalSpeed` 设为 0，或者按 R。
 
-**四个模块都不做**：不防摔落伤害、不改位置、不自动攻击。
+**InvChest 额外不做**：不自动走去开箱子、不自动打开容器、不碰末影箱之外的特殊容器界面
+（工作台、熔炉、漏斗这些一律不动）。它只在你**自己打开了**箱子之后才开始取，
+而且每 0.85 秒才取一件。
 
-> 关于服务器规则：这四个模块都会向服务端发送自动化输入，在多数服务器的规则下属于作弊。
-> AimAssist 还会显著改变 PvP 对抗的公平性。请只在你自己开的存档或允许的环境里使用。
+**五个模块都不做**：不防摔落伤害、不改位置、不自动攻击、不自动移动。
+
+> 关于服务器规则：这五个模块都会向服务端发送自动化输入，在多数服务器的规则下属于作弊。
+> AimAssist 会显著改变 PvP 对抗的公平性，InvChest 在共享箱子的服务器上等同于快速搬空公共物资。
+> 请只在你自己开的存档或允许的环境里使用。
 
 ---
 
-## 七、自行构建
+## 八、自行构建
 
 ```bash
 ./gradlew build
 ```
 
-产物在 `build/libs/eagle-1.3.0.jar`（`-sources.jar` 是源码包，不用丢进 mods）。
+产物在 `build/libs/eagle-1.5.0.jar`（`-sources.jar` 是源码包，不用丢进 mods）。
 
 开发环境（`./gradlew runClient`）需要联网下载 Minecraft 资源与依赖。
 
 ---
 
-## 八、项目结构
+## 九、项目结构
 
 ```
 src/main/java/com/dmod/eagle/
@@ -431,26 +542,26 @@ src/main/java/com/dmod/eagle/
 ├── CpsBoostLogic.java            Eagle：右键提速的节奏调度
 ├── SafePadLogic.java             SafePad：目标选择 + 支撑面选择 + 静默旋转放置
 ├── AimAssistLogic.java           AimAssist：目标筛选 + 指数逼近 + 度数换算 + 抖动
+├── InvChestLogic.java            InvChest：容器识别 + 等级评分 + 取物节奏
+├── EagleCommands.java            聊天框客户端指令（.inv speed）
 ├── EagleHud.java                 左上角状态显示
 └── mixin/
+    ├── ChatCommandMixin.java     注入 sendChatMessage，拦下客户端指令
     ├── KeyboardInputMixin.java   注入 KeyboardInput.tick，改写 PlayerInput
     ├── MinecraftClientMixin.java 注入 MinecraftClient.tick，调度 itemUseCooldown
     └── MouseMixin.java           注入 Mouse.updateMouse，向 cursorDelta 叠加一笔修正
 ```
 
-模组总共**三处 Mixin**，都只在客户端。
+模组总共**四处 Mixin**，都只在客户端。
 
-* SafePad 完全不依赖 Mixin，它走的是原版自己的交互 API。
+* SafePad 与 InvChest 完全不依赖 Mixin，它们走的是原版自己的交互 API。
 * 右键提速几乎不依赖——它只是把原版那个私有计数器在正确的时刻放到正确的值。
 * AimAssist 也几乎不依赖——它加的是原版本来就要消费的那笔鼠标位移，
   后面的角度换算、灵敏度曲线、视角应用全部是原版自己做的。
+* 客户端指令这个是唯一「借」Mixin 干别的事的：它只是让聊天消息在变成数据包之前停下来。
 
 ---
 
-此README由AI生成
+## License
 
-免责声明
--------------------------------------
-1.此工具只用于生存辅助
-2.请勿在多人服务器使用,可能造成封禁风险,概不负责
--------------------------------------
+MIT

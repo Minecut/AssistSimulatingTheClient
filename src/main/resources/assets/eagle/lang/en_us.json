@@ -2,5 +2,6 @@
   "category.eagle": "Eagle",
   "key.eagle.toggle": "Toggle Eagle",
   "key.eagle.pad": "Toggle Safety Pad",
-  "key.eagle.aim": "Toggle Aim Assist"
+  "key.eagle.aim": "Toggle Aim Assist",
+  "key.eagle.invchest": "Toggle Chest Looter"
 }

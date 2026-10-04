@@ -60,6 +60,14 @@ public final class EagleHud {
             text.append(Text.literal(" [lock]").formatted(Formatting.YELLOW));
         }
 
+        text.append(Text.literal("  Inv ").formatted(cfg.invChestEnabled ? Formatting.AQUA : Formatting.DARK_GRAY))
+                .append(Text.literal(cfg.invChestEnabled ? "ON" : "OFF")
+                        .formatted(cfg.invChestEnabled ? Formatting.GREEN : Formatting.RED));
+
+        if (cfg.invChestEnabled && InvChestLogic.isTaking()) {
+            text.append(Text.literal(" [take]").formatted(Formatting.YELLOW));
+        }
+
         context.drawText(mc.textRenderer, text, 4, 4, 0xFFFFFF, true);
     }
 }

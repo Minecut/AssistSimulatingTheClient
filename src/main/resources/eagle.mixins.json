@@ -4,6 +4,7 @@
   "package": "com.dmod.eagle.mixin",
   "compatibilityLevel": "JAVA_21",
   "client": [
+    "ChatCommandMixin",
     "KeyboardInputMixin",
     "MinecraftClientMixin",
     "MouseMixin"

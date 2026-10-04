@@ -150,6 +150,31 @@ public final class EagleConfig {
     /** Player names to leave alone, matched case insensitively. */
     public List<String> aimWhitelist = new ArrayList<>();
 
+    // ------------------------------------------------------------------ chest looting
+
+    /**
+     * Master switch of the chest looter. Independent of everything else. Bound to {@code N} in game.
+     */
+    public boolean invChestEnabled = false;
+
+    /** Lower bound for {@link #invChestDelayMs}, shared with the {@code .inv speed} command. */
+    public static final int INV_CHEST_MIN_DELAY_MS = 50;
+
+    /** Upper bound for {@link #invChestDelayMs}, shared with the {@code .inv speed} command. */
+    public static final int INV_CHEST_MAX_DELAY_MS = 10000;
+
+    /** Milliseconds between two takes. 850 ms is roughly a person emptying a chest by hand. */
+    public int invChestDelayMs = 850;
+
+    /** Skip anything the player already carries somewhere in their inventory. */
+    public boolean invChestSkipExisting = true;
+
+    /** Lowest tier worth taking, 1..5. Raise it to leave the junk behind. */
+    public int invChestMinTier = 1;
+
+    /** Close the container once nothing is left to take. */
+    public boolean invChestCloseWhenDone = false;
+
     // ------------------------------------------------------------------ plumbing
 
     private EagleConfig() {
@@ -196,6 +221,8 @@ public final class EagleConfig {
         if (aimWhitelist == null) {
             aimWhitelist = new ArrayList<>();
         }
+        invChestDelayMs = (int) clamp(invChestDelayMs, INV_CHEST_MIN_DELAY_MS, INV_CHEST_MAX_DELAY_MS);
+        invChestMinTier = (int) clamp(invChestMinTier, 1, 5);
         return this;
     }
 

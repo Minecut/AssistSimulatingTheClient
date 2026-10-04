@@ -2,5 +2,6 @@
   "category.eagle": "Eagle 安全搭路",
   "key.eagle.toggle": "开关 Eagle",
   "key.eagle.pad": "开关安全垫块",
-  "key.eagle.aim": "开关 AimAssist"
+  "key.eagle.aim": "开关 AimAssist",
+  "key.eagle.invchest": "开关自动开箱"
 }
