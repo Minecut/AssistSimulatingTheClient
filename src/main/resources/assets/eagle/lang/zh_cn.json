@@ -3,5 +3,8 @@
   "key.eagle.toggle": "开关 Eagle",
   "key.eagle.pad": "开关安全垫块",
   "key.eagle.aim": "开关 AimAssist",
-  "key.eagle.invchest": "开关自动开箱"
+  "key.eagle.invchest": "开关自动开箱",
+  "key.eagle.esp": "开关 ESP",
+  "key.eagle.gui": "打开 GUI",
+  "key.eagle.blockin": "开关 BlockIn"
 }

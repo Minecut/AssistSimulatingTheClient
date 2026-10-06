@@ -1,12 +1,11 @@
-# Eagle —— Fabric 客户端辅助套件
 
-[!]------------
 免责声明
-1.最好不要在服务器使用
-2.可能会造成封号风险,封号之后盖不负责
-[!]------------
-
-五个模块，各自独立开关：
+------------
+1.此客户端由ai生成，ReadMe也由AI生成
+2.此客户端用于模组测试，不要服务器使用
+3.如果造成封禁后果概不负责
+------------
+七个模块，各自独立开关：
 
 | 模块 | 行为 | 开关 | 默认 |
 | --- | --- | --- | --- |
@@ -15,6 +14,10 @@
 | **SafePad** | 快踩空时在脚下补一块方块，让你继续走 | `B` | **关** |
 | **AimAssist** | 往目标方向修正鼠标向量，镜头真的转过去 | `R` | **关** |
 | **InvChest** | 打开箱子后每 0.85 秒取一件，高级物品优先 | `N` | **关** |
+| **ESP** | 透墙高亮玩家轮廓与名字，带距离 | `G` | **关** |
+| **BlockIn** | 自动在自己四周砌墙把自己围住，平滑转头 | `K` | **关** |
+
+按 **右 Shift** 打开 ClickGUI，所有开关和参数都能在里面直接调。
 
 聊天框里的客户端指令（`.inv speed <秒>`）可以随时调 InvChest 的节奏，详见第四节。
 
@@ -25,7 +28,11 @@ SafePad 与 Eagle 同时开启时 **SafePad 优先**：它成功放下方块的�
 让你保持全速前进；一旦 SafePad 放不下去（手上没方块、够不着、被挡住），Eagle 立刻接管把你拦在边缘。
 这就是「兜底的兜底」。
 
-AimAssist 和 InvChest 与前三个都无关，各自独立，`enabled`（V 键）不影响它们。
+AimAssist、InvChest 和 ESP 与前三个都无关，各自独立，`enabled`（V 键）不影响它们。
+ESP 是纯本地显示，不改任何游戏状态。
+
+**右 Shift 打开的 ClickGUI**（第六节）把五个模块的全部参数放在一起调，
+它和热键、聊天指令读写的是同一份配置，不存在两边不一致的问题。
 
 * Minecraft **1.21.4** / Fabric Loader ≥ 0.16 / Fabric API / Java 21
 * 纯客户端（`"environment": "client"`），单机、局域网、服务器都能用
@@ -355,19 +362,227 @@ private void eagle$clientCommand(String content, CallbackInfo ci) {
 
 ---
 
-## 五、安装
+## 五、ESP
+
+按 **G** 开关。纯本地显示，不改任何游戏状态、不发任何包。
+
+### 1. 轮廓：直接写发光标志位
+
+第一版这里我用的是 `entity.setGlowing(true)`，**它是错的，轮廓根本没出来**。原因在 `Entity` 里：
+
+```java
+public boolean isGlowing() {
+    if (getWorld().isClient()) return getFlag(6);   // 客户端读的是 DataTracker 标志位
+    return this.glowing;                             // 服务端才读本地字段
+}
+
+public final void setGlowing(boolean glowing) {
+    this.glowing = glowing;
+    this.setFlag(6, this.isGlowing());   // ← 客户端这里读回来的是「旧值」
+}
+```
+
+`setGlowing` 是给服务端用的。客户端调用时，第二步把标志位又写回了原样，**等于空操作**。
+
+所以改成直接写标志位。`getFlag` / `setFlag` 都是 `protected`，用一个 `@Invoker` 接口 mixin 打开：
+
+```java
+@Mixin(Entity.class)
+public interface EntityFlagsMixin {
+    @Invoker("getFlag") boolean eagle$getFlag(int index);
+    @Invoker("setFlag") void eagle$setFlag(int index, boolean value);
+}
+```
+
+原版渲染器对发光实体画的描边天然穿墙（光谱箭就是这个效果），代价接近零。
+
+释放时会**恢复原标志位**而不是直接清掉，所以别人身上本来就有光谱箭 / 发光药水时不会被我们误清。
+
+### 2. 名字：自己画，因为原版的会「看情况」
+
+原版名签的图层是这样选的：
+
+```java
+boolean bl = !state.sneaking;                      // 不潜行 = true
+TextLayerType layer = bl ? SEE_THROUGH : NORMAL;   // 潜行 → 退回深度测试
+```
+
+也就是说**潜行的玩家，名字会被墙挡住**。对 ESP 来说这是不能接受的（搭路、蹲点的人全在潜行）。
+
+所以改成自己画。原版那边只需要把标签位置清空，它自己的名签通道就会立刻返回：
+
+```java
+if (EspLogic.isTracked(entity)) {
+    state.nameLabelPos = null;   // 原版名签通道在 nameLabelPos == null 时直接 return
+}
+```
+
+然后在 `WorldRenderEvents.AFTER_ENTITIES` 里用 `TextLayerType.SEE_THROUGH` 画我们自己的：
+
+```java
+matrices.translate(pos.x - cam.x, pos.y + entity.getHeight() + 0.5 - cam.y, pos.z - cam.z);
+matrices.multiply(camera.getRotation());        // 面向摄像机
+matrices.scale(0.025F, -0.025F, 0.025F);
+textRenderer.draw(text, -width / 2.0F, 0.0F, 0xFFFFFFFF, true, matrix, consumers,
+        TextRenderer.TextLayerType.SEE_THROUGH, 0x40000000, 0xF000F0);   // 全亮，暗处也看得清
+```
+
+`AFTER_ENTITIES` 拿到的世界矩阵栈已经转到摄像机朝向，所以按 `世界坐标 - 摄像机坐标` 平移即可，
+和原版自己渲染实体和名签的方式一致。
+
+### 3. 性能
+
+| 做法 | 原因 |
+| --- | --- |
+| 追踪集合**每 `espRefreshTicks` 刻重建一次**（默认 4 刻 = 200ms） | 实体扫描、`Text` 分配、写标志位全部放在定时器里，不放在每帧 |
+| 每帧路径只有 `isEmpty()` 判断 + 一次 HashMap 查表 | `isTracked` 每帧、每个被渲染实体都会调用 |
+| **只在实体进出集合时**写标志位 | 不是每次刷新都写 |
+| 距离过滤用 `squaredDistanceTo`，不做开方 | 热路径 |
+| `Text` 对象**缓存**在 map 里，不每帧重建 | 避免每秒上百次对象分配 |
+| 关掉或换世界时立即 `releaseAll()` | 不留悬挂引用、不留被改过的标志位 |
+| 用 `getEntitiesByClass(..., box, ...)` 而不是遍历全世界的实体 | 走原版的实体分区索引 |
+
+HUD 上的 `[N]` 就是当前追踪数量，方便你确认它没有失控。
+
+---
+
+## 六、ClickGUI
+
+按 **右 Shift** 打开。四列分类面板，模块开关和全部参数都能直接点。
+
+### 1. 布局与交互
+
+```
+┌─ Movement ─────┐ ┌─ Combat ──────┐ ┌─ Player ──────┐ ┌─ Render ──────┐
+│ ■ Eagle    V ▼ │ │ □ AimAssist R │ │ □ InvChest  N │ │ □ ESP       G │
+│   Edge Offset  │ │   ...         │ │   ...         │ │   ...         │
+│   Release Marg │ │               │ │               │ │               │
+│ □ SafePad  B   │ │               │ │               │ │               │
+└────────────────┘ └───────────────┘ └───────────────┘ └───────────────┘
+```
+
+* **点左边的方块** → 开关模块（方块填色 = 开，深灰 = 关）
+* **点行内其它位置** → 展开/收起参数（右侧箭头跟着翻）
+* **勾选项** → 点一下切换
+* **数值项** → 按住左右拖，背景的填充条就是当前比例；右侧显示数值
+* **滚轮** → 悬停在哪一列就滚哪一列，右侧有滚动条
+* **右 Shift / Esc** → 关闭
+
+分类和图标配色：Movement 蓝、Combat 红、Player 绿、Render 紫。
+
+### 2. 渲染细节
+
+**背景**用的是原版自己的 `renderBackground`——它自带模糊和压暗，所以不用自己写 shader 就能
+有 LiquidBounce 那种毛玻璃感。`Screen.render` 本来就会调它，所以这里覆盖 `render` 时**故意不调
+`super`**，否则会叠两次。
+
+**圆角**没有用 shader：主体是一块方矩形，四个角各用 `radius` 行一像素高的小矩形去近似一个圆。
+在 4px 这个量级上看不出差别，代价是每块面板多十几个 quad。
+
+**动画**三个：
+
+* 打开时面板从右侧滑入 + 淡入，每列依次延迟 0.12——用的是 `easeOut` 三次曲线
+* 展开参数时高度做指数逼近（帧率无关），同时在收尾处叠一层渐隐
+* 悬停高亮是渐变的，不是硬切
+
+### 3. 一个热键时序的坑
+
+热键**不能用 `wasPressed()`**。如果 GUI 开着的时候又被按了一次，那次按下会留在按键的计数器里；
+等界面关掉，下一 tick 就会读到它、把界面又弹开。
+
+所以用的是 `isPressed()` 加一个自锁标志：只有**物理松开之后**才重新武装。
+
+```java
+if (guiLatched) {
+    if (!down) guiLatched = false;   // 松开才复位
+} else if (down && !guiOpen) {
+    guiLatched = true;
+    mc.setScreen(new EagleScreen());
+}
+```
+
+### 4. 面板与配置是同一份数据
+
+GUI 里每个设置项都是直接读写 `EagleConfig` 的字段的 lambda，不做任何镜像或同步。
+所以热键、聊天指令和 GUI 三条路改的都是同一个值，不会出现「GUI 显示的和实际生效的不一致」。
+改动会在松手或关界面时写回 `eagle.json`。
+
+模块行的按键标签是**调用时才解析**的（`Supplier<KeyBinding>`），因为面板是第一次打开时才构建，
+而按键是模组初始化时注册的——直接存引用会在顺序变化时永久锁死成 null。
+
+---
+
+## 七、BlockIn
+
+按 **K** 开关。开启后持续把你四周砌起来，被拆了会补。
+
+### 1. 放置
+
+复用 SafePad 那套原语（现在抽成了 `BlockPlacement`）：找到目标方块旁边可点击的支撑面，
+构造 `BlockHitResult`，交给 `ClientPlayerInteractionManager.interactBlock`。
+客户端预测、sequence、发包仍然是原版的。
+
+目标是**你脚下那一层的四个正方向**（可选第二层齐头高、可选四个对角）：
+
+```
+        □              □ = 目标
+      □ ● □            ● = 你
+        □
+```
+
+**层是自下而上填的**：第二层的支撑是它下面那一格，所以先把脚边那圈填掉，头那圈才放得下去。
+
+放不进去的格子会被跳过——`BlockPlacement.clippedByPlayer` 用玩家自己的碰撞箱做交集判断，
+因为原版 `BlockItem.canPlace` 本来就会用玩家的 shape context 拒掉这些位置，
+先判掉就不用白烧一次转头和一次发包。
+
+### 2. 平滑转头
+
+要摸到身旁方块的面，视角得转开很远（可能 90 度以上），**一 tick 内转过去就是最典型的机器特征**。
+所以朝向不是直接赋值，而是存在 `aimYaw/aimPitch` 里，每 tick 朝目标走**最多 N 度**：
+
+```java
+distance = hypot(wrapDegrees(wantYaw - aimYaw), wantPitch - aimPitch);
+if (distance <= maxStep) { aim = want; return true; }
+aimYaw   += deltaYaw   / distance * maxStep;
+aimPitch += deltaPitch / distance * maxStep;
+```
+
+`blockInRotationSpeed` 就是这个 N（默认 28 度/刻）。实测：从 (0,0) 转向 (90,45)
+距离 100.6 度，恰好 **4 步**收敛。
+
+走的是**直线插值**而不是分别插值 yaw 和 pitch，所以转角速度和距离成正比，
+不会出现"先猛转水平再慢慢补俯仰"的割裂感。
+
+### 3. 两种转头方式
+
+| `blockInVisibleRotation` | 表现 | 代价 |
+| --- | --- | --- |
+| `true`（默认） | 镜头**真的**平滑转过去，砌完再平滑转回原位 | 视野会被拽走 |
+| `false` | 只改发包里的朝向，你镜头纹丝不动 | 你自己动鼠标时原版仍会发出真实朝向，两者会交替 |
+
+**默认给了可见转头**，因为你说的是「平滑转头」，而且它没有冲突——原版自己的朝向包和我们发的是同一个值。
+静默模式下这个冲突是固有的：客户端的 `sendMovementPackets` 只在自己朝向变化时才发包，
+你在砌墙时一动鼠标，服务端就会看到一次跳变。放置本身不受影响（服务端不校验朝向），但观感上是断的。
+
+`blockInReturnRotation` 控制砌完后要不要转回原位（只对可见模式有意义）。
+
+---
+
+## 八、安装
 
 1. 装好 **Fabric Loader**（≥ 0.16）和一个 **1.21.4** 的档案
 2. 下载 **Fabric API**（1.21.4 版）放进 `mods`
-3. 把 `eagle-1.5.0.jar` 放进 `mods`
-4. 启动游戏，进世界后按 **V** 开关 Eagle，**B** 开关 SafePad，**R** 开关 AimAssist，**N** 开关 InvChest
+3. 把 `eagle-1.8.0.jar` 放进 `mods`
+4. 启动游戏，进世界后按 **V** 开关 Eagle，**B** 开关 SafePad，**R** 开关 AimAssist，
+   **N** 开关 InvChest，**G** 开关 ESP，**K** 开关 BlockIn，**右 Shift** 打开 GUI
 
-左上角显示 `Eagle ON [sneak]  CPS ON [hold]  Pad OFF  Aim OFF  Inv OFF` 之类的实时状态。
+左上角显示 `Eagle ON [sneak]  CPS ON [hold]  Pad OFF  Aim OFF  Inv OFF  ESP OFF` 之类的实时状态。
 聊天框里输入 `.inv speed 0.85` 可以直接调 InvChest 的取物间隔。
 
 ---
 
-## 六、配置
+## 九、配置
 
 首次启动会生成 `.minecraft/config/eagle.json`：
 
@@ -412,7 +627,24 @@ private void eagle$clientCommand(String content, CallbackInfo ci) {
   "invChestDelayMs": 850,
   "invChestSkipExisting": true,
   "invChestMinTier": 1,
-  "invChestCloseWhenDone": false
+  "invChestCloseWhenDone": false,
+
+  "espEnabled": false,
+  "espRange": 64.0,
+  "espGlow": true,
+  "espShowNames": true,
+  "espShowDistance": true,
+  "espTargetPlayers": true,
+  "espTargetMobs": false,
+  "espRefreshTicks": 4,
+
+  "blockInEnabled": false,
+  "blockInLayers": 1,
+  "blockInCorners": false,
+  "blockInDelayMs": 60,
+  "blockInRotationSpeed": 28.0,
+  "blockInVisibleRotation": true,
+  "blockInReturnRotation": true
 }
 ```
 
@@ -477,6 +709,31 @@ private void eagle$clientCommand(String content, CallbackInfo ci) {
 | `invChestMinTier` | `1` | 最低取用等级 1~5。调到 2 就会把泥土圆石这类垃圾留下 |
 | `invChestCloseWhenDone` | `false` | 没有可取的物品时自动关闭容器 |
 
+### ESP
+
+| 字段 | 默认 | 说明 |
+| --- | --- | --- |
+| `espEnabled` | `false` | ESP 总开关，G 键切换。独立模块，不受 `enabled` 约束 |
+| `espRange` | `64.0` | 最大高亮距离（格），钳制在 4 ~ 256 |
+| `espGlow` | `true` | 画原版的发光轮廓，这个天然穿墙 |
+| `espShowNames` | `true` | 替换头顶名签 |
+| `espShowDistance` | `true` | 在名字后面追加距离，例如 `Steve 12.3m` |
+| `espTargetPlayers` | `true` | 是否高亮玩家 |
+| `espTargetMobs` | `false` | 是否高亮生物 |
+| `espRefreshTicks` | `4` | 追踪集合的重建间隔（刻），钳制在 1 ~ 40。调大更省性能，代价是进出范围的判定变迟钝 |
+
+### BlockIn
+
+| 字段 | 默认 | 说明 |
+| --- | --- | --- |
+| `blockInEnabled` | `false` | BlockIn 总开关，K 键切换。独立模块，不受 `enabled` 约束 |
+| `blockInLayers` | `1` | 墙的高度：1 = 只围脚边，2 = 再加一层齐头高。钳制在 1 ~ 2 |
+| `blockInCorners` | `false` | 是否连四个对角也填 |
+| `blockInDelayMs` | `60` | 两次放置的间隔（毫秒），钳制在 0 ~ 1000 |
+| `blockInRotationSpeed` | `28.0` | 转头速度上限（度/刻），钳制在 1 ~ 180。调小更平滑但更慢 |
+| `blockInVisibleRotation` | `true` | 镜头真的转（true）还是只改发包（false） |
+| `blockInReturnRotation` | `true` | 砌完是否转回原视角，只对可见模式有意义 |
+
 ### 关于安全余量
 
 原版行走 4.317 格/秒 = **每刻 0.216 格**，检测每刻做一次。
@@ -493,7 +750,7 @@ SafePad 就是吃这个窗口的——所以它每次都能赶在坠落之前把
 
 ---
 
-## 七、行为边界
+## 十、行为边界
 
 **会生效**：站在地面正常行走、搭桥、跑搭、倒退搭、侧向搭。
 
@@ -518,27 +775,31 @@ SafePad 就是吃这个窗口的——所以它每次都能赶在坠落之前把
 （工作台、熔炉、漏斗这些一律不动）。它只在你**自己打开了**箱子之后才开始取，
 而且每 0.85 秒才取一件。
 
-**五个模块都不做**：不防摔落伤害、不改位置、不自动攻击、不自动移动。
+**ESP 额外不做**：不发任何包、不改任何游戏状态。它只写本地实体上的发光标志（释放时恢复原值）
+和渲染时的名签文字，全部是纯客户端的东西。
 
-> 关于服务器规则：这五个模块都会向服务端发送自动化输入，在多数服务器的规则下属于作弊。
+**六个模块都不做**：不防摔落伤害、不改位置、不自动攻击、不自动移动。
+
+> 关于服务器规则：前五个模块都会向服务端发送自动化输入，在多数服务器的规则下属于作弊。
 > AimAssist 会显著改变 PvP 对抗的公平性，InvChest 在共享箱子的服务器上等同于快速搬空公共物资。
+> ESP 不发包，但很多服务器把它列为禁止的客户端模组。
 > 请只在你自己开的存档或允许的环境里使用。
 
 ---
 
-## 八、自行构建
+## 十一、自行构建
 
 ```bash
 ./gradlew build
 ```
 
-产物在 `build/libs/eagle-1.5.0.jar`（`-sources.jar` 是源码包，不用丢进 mods）。
+产物在 `build/libs/eagle-1.8.0.jar`（`-sources.jar` 是源码包，不用丢进 mods）。
 
 开发环境（`./gradlew runClient`）需要联网下载 Minecraft 资源与依赖。
 
 ---
 
-## 九、项目结构
+## 十二、项目结构
 
 ```
 src/main/java/com/dmod/eagle/
@@ -550,30 +811,38 @@ src/main/java/com/dmod/eagle/
 ├── AimAssistLogic.java           AimAssist：目标筛选 + 指数逼近 + 度数换算 + 抖动
 ├── InvChestLogic.java            InvChest：容器识别 + 等级评分 + 取物节奏
 ├── EagleCommands.java            聊天框客户端指令（.inv speed）
-├── EagleHud.java                 左上角状态显示
+├── EspLogic.java                 ESP：目标追踪 + 标志位发光 + 低频刷新 + 名签缓存
+├── EspRenderer.java              ESP：自绘透墙名签（AFTER_ENTITIES）
+├── BlockPlacement.java           共用放置原语：找支撑面、可达性、右键
+├── BlockInLogic.java             BlockIn：四周目标 + 平滑转头状态机
+├── EagleHud.java                 左上角状态显示（自动换行）
+├── gui/
+│   ├── EagleScreen.java          ClickGUI：布局、动画、鼠标/滚轮/键盘交互
+│   ├── GuiCategory.java          分类与模块/设置注册表
+│   ├── GuiModule.java            模块行（开关、按键标签、展开动画）
+│   ├── GuiSetting.java           设置项（勾选框 / 可拖拽数值）
+│   └── GuiTheme.java             配色、圆角绘制、动画曲线
 └── mixin/
     ├── ChatCommandMixin.java     注入 sendChatMessage，拦下客户端指令
+    ├── EntityFlagsMixin.java     打开 Entity.getFlag/setFlag 的访问器
+    ├── EntityRendererMixin.java  注入 getAndUpdateRenderState，抑制原版名签
     ├── KeyboardInputMixin.java   注入 KeyboardInput.tick，改写 PlayerInput
     ├── MinecraftClientMixin.java 注入 MinecraftClient.tick，调度 itemUseCooldown
     └── MouseMixin.java           注入 Mouse.updateMouse，向 cursorDelta 叠加一笔修正
 ```
 
-模组总共**四处 Mixin**，都只在客户端。
+模组总共**六处 Mixin**，都只在客户端。
 
 * SafePad 与 InvChest 完全不依赖 Mixin，它们走的是原版自己的交互 API。
 * 右键提速几乎不依赖——它只是把原版那个私有计数器在正确的时刻放到正确的值。
 * AimAssist 也几乎不依赖——它加的是原版本来就要消费的那笔鼠标位移，
   后面的角度换算、灵敏度曲线、视角应用全部是原版自己做的。
-* 客户端指令这个是唯一「借」Mixin 干别的事的：它只是让聊天消息在变成数据包之前停下来。
+* 客户端指令是唯一「借」Mixin 干别的事的：它只是让聊天消息在变成数据包之前停下来。
+* ESP 用了两处：一处打开 `getFlag`/`setFlag` 访问器（因为它们都是 `protected`），
+  一处抑制原版名签；名字本身是我们自己画的。
 
 ---
 
 ## License
 
 MIT
-
-##------------
-免责声明
-1.最好不要在服务器使用
-2.可能会造成封号风险,封号之后盖不负责
-------------

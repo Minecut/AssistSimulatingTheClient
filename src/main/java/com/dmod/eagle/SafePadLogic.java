@@ -42,15 +42,6 @@ import net.minecraft.world.World;
  */
 public final class SafePadLogic {
 
-    /**
-     * Faces are tried in this order so that the most natural support is picked first: the block below
-     * the target (clicking its top), then the four horizontal neighbours, and only then the block
-     * above (clicking its underside, for a target that only has a ceiling for support).
-     */
-    private static final Direction[] FACE_ORDER = {
-            Direction.UP, Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST, Direction.DOWN
-    };
-
     private static final float DEG_TO_RAD = 0.017453292F;
 
     private static boolean placedThisTick = false;
@@ -121,16 +112,9 @@ public final class SafePadLogic {
             return;
         }
 
-        BlockHitResult hit = findHit(mc.world, target);
+        BlockHitResult hit = BlockPlacement.findHit(mc.world, target);
 
-        if (hit == null) {
-            return;
-        }
-
-        // Never send a placement the server will throw away as out of reach.
-        double range = player.getBlockInteractionRange();
-
-        if (player.getEyePos().squaredDistanceTo(hit.getPos()) > range * range) {
+        if (hit == null || !BlockPlacement.inReach(player, hit)) {
             return;
         }
 
@@ -193,25 +177,7 @@ public final class SafePadLogic {
 
     /** The first solid neighbour of {@code target}, described as the face of it that we would click. */
     private static BlockHitResult findHit(World world, BlockPos target) {
-        for (Direction face : FACE_ORDER) {
-            // Clicking block N on face F places the new block at N.offset(F), so N is the neighbour
-            // on the opposite side of the target.
-            BlockPos neighbour = target.offset(face.getOpposite());
-            BlockState state = world.getBlockState(neighbour);
-
-            if (state.isAir() || state.isReplaceable()) {
-                continue;
-            }
-
-            Vec3d hit = new Vec3d(
-                    neighbour.getX() + 0.5D + face.getOffsetX() * 0.5D,
-                    neighbour.getY() + 0.5D + face.getOffsetY() * 0.5D,
-                    neighbour.getZ() + 0.5D + face.getOffsetZ() * 0.5D);
-
-            return new BlockHitResult(hit, face, neighbour, false);
-        }
-
-        return null;
+        return BlockPlacement.findHit(world, target);
     }
 
     // ------------------------------------------------------------------ placing
@@ -223,13 +189,7 @@ public final class SafePadLogic {
             return false;
         }
 
-        ItemStack stack = player.getStackInHand(hand);
-
-        if (player.getItemCooldownManager().isCoolingDown(stack)) {
-            return false;
-        }
-
-        float[] rotation = rotationTo(player.getEyePos(), hit.getPos());
+        float[] rotation = BlockPlacement.rotationTo(player.getEyePos(), hit.getPos());
 
         if (rotation == null) {
             return false;
@@ -261,32 +221,6 @@ public final class SafePadLogic {
     }
 
     private static Hand findBlockHand(ClientPlayerEntity player) {
-        if (isBlock(player.getMainHandStack())) {
-            return Hand.MAIN_HAND;
-        }
-        if (isBlock(player.getOffHandStack())) {
-            return Hand.OFF_HAND;
-        }
-        return null;
-    }
-
-    private static boolean isBlock(ItemStack stack) {
-        return !stack.isEmpty() && stack.getItem() instanceof BlockItem;
-    }
-
-    /** Vanilla yaw convention: 0 faces +Z, and the look vector is {@code (-sin yaw, 0, cos yaw)}. */
-    private static float[] rotationTo(Vec3d eye, Vec3d target) {
-        double dx = target.x - eye.x;
-        double dy = target.y - eye.y;
-        double dz = target.z - eye.z;
-        double flat = Math.sqrt(dx * dx + dz * dz);
-
-        if (flat < 1.0E-6D && Math.abs(dy) < 1.0E-6D) {
-            return null;
-        }
-
-        float yaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
-        float pitch = (float) -Math.toDegrees(Math.atan2(dy, flat));
-        return new float[] { yaw, pitch };
+        return BlockPlacement.findBlockHand(player);
     }
 }

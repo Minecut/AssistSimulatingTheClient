@@ -3,5 +3,8 @@
   "key.eagle.toggle": "Toggle Eagle",
   "key.eagle.pad": "Toggle Safety Pad",
   "key.eagle.aim": "Toggle Aim Assist",
-  "key.eagle.invchest": "Toggle Chest Looter"
+  "key.eagle.invchest": "Toggle Chest Looter",
+  "key.eagle.esp": "Toggle ESP",
+  "key.eagle.gui": "Open GUI",
+  "key.eagle.blockin": "Toggle BlockIn"
 }

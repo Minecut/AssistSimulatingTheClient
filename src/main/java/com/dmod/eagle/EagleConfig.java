@@ -175,6 +175,58 @@ public final class EagleConfig {
     /** Close the container once nothing is left to take. */
     public boolean invChestCloseWhenDone = false;
 
+    // ------------------------------------------------------------------ esp
+
+    /** Master switch of the ESP. Independent of everything else. Bound to {@code G} in game. */
+    public boolean espEnabled = false;
+
+    /** Maximum distance to highlight, in blocks. */
+    public double espRange = 64.0D;
+
+    /** Draw the vanilla glowing outline, which shows through terrain. */
+    public boolean espGlow = true;
+
+    /** Replace the name label above tracked entities. */
+    public boolean espShowNames = true;
+
+    /** Append the distance to the label. */
+    public boolean espShowDistance = true;
+
+    /** Consider mobs as well as players. */
+    public boolean espTargetMobs = false;
+
+    /** Consider other players. */
+    public boolean espTargetPlayers = true;
+
+    /**
+     * Ticks between rebuilds of the tracked set. Everything expensive - the entity scan, the label
+     * text allocation, the glow flag writes - happens on this timer rather than every frame.
+     */
+    public int espRefreshTicks = 4;
+
+    // ------------------------------------------------------------------ block in
+
+    /** Master switch of BlockIn. Independent of everything else. Bound to {@code K} in game. */
+    public boolean blockInEnabled = false;
+
+    /** How tall the wall is: 1 fills beside the feet, 2 adds a row at head height. */
+    public int blockInLayers = 1;
+
+    /** Also fill the four diagonals. */
+    public boolean blockInCorners = false;
+
+    /** Milliseconds between two placements. */
+    public int blockInDelayMs = 60;
+
+    /** How fast the aim is allowed to travel, in degrees per tick. Lower is smoother and slower. */
+    public double blockInRotationSpeed = 28.0D;
+
+    /** Turn the real camera. Off keeps the rotation in the packets only and leaves your view alone. */
+    public boolean blockInVisibleRotation = true;
+
+    /** When the wall is finished, walk the camera back to where it started. */
+    public boolean blockInReturnRotation = true;
+
     // ------------------------------------------------------------------ plumbing
 
     private EagleConfig() {
@@ -223,6 +275,11 @@ public final class EagleConfig {
         }
         invChestDelayMs = (int) clamp(invChestDelayMs, INV_CHEST_MIN_DELAY_MS, INV_CHEST_MAX_DELAY_MS);
         invChestMinTier = (int) clamp(invChestMinTier, 1, 5);
+        espRange = clamp(espRange, 4.0D, 256.0D);
+        espRefreshTicks = (int) clamp(espRefreshTicks, 1, 40);
+        blockInLayers = (int) clamp(blockInLayers, 1, 2);
+        blockInDelayMs = (int) clamp(blockInDelayMs, 0, 1000);
+        blockInRotationSpeed = clamp(blockInRotationSpeed, 1.0D, 180.0D);
         return this;
     }
 

@@ -1,6 +1,6 @@
-[20:00:22] [main/INFO] (FabricLoader/GameProvider) Loading Minecraft 1.21.4 with Fabric Loader 0.17.2
-[20:00:22] [main/INFO] (FabricLoader) Loading 55 mods:
-	- eagle 1.4.0
+[20:59:26] [main/INFO] (FabricLoader/GameProvider) Loading Minecraft 1.21.4 with Fabric Loader 0.17.2
+[20:59:26] [main/INFO] (FabricLoader) Loading 55 mods:
+	- eagle 1.7.0
 	- fabric-api 0.119.4+1.21.4
 	- fabric-api-base 0.4.54+b47eab6b04
 	- fabric-api-lookup-api-v1 1.6.86+b1caf1e904
@@ -55,26 +55,23 @@
 	- java 21
 	- minecraft 1.21.4
 	- mixinextras 0.5.0
-[20:00:22] [main/INFO] (FabricLoader/Mixin) SpongePowered MIXIN Subsystem Version=0.8.7 Source=file:/C:/Users/mineo/.gradle/caches/modules-2/files-2.1/net.fabricmc/sponge-mixin/0.16.3+mixin.0.8.7/3e535042688d1265447e52ad86950b7d9678a5fa/sponge-mixin-0.16.3+mixin.0.8.7.jar Service=Knot/Fabric Env=CLIENT
-[20:00:23] [main/INFO] (FabricLoader/Mixin) Loaded Fabric development mappings for mixin remapper!
-[20:00:23] [main/INFO] (FabricLoader/Mixin) Compatibility level set to JAVA_21
-[20:00:26] [main/INFO] (FabricLoader/MixinExtras|Service) Initializing MixinExtras via com.llamalad7.mixinextras.service.MixinExtrasServiceImpl(version=0.5.0).
-[20:00:31] [Datafixer Bootstrap/INFO] (Minecraft) 243 Datafixer optimizations took 2157 milliseconds
-[20:00:48] [Render thread/INFO] (Minecraft) Environment: Environment[sessionHost=https://sessionserver.mojang.com, servicesHost=https://api.minecraftservices.com, name=PROD]
-[20:00:48] [Render thread/INFO] (Minecraft) Setting user: Player28
-[20:00:48] [Render thread/INFO] (eagle) [Eagle] SMOKE-TEST 1 KeyboardInput handlers = [handler$zzh000$eagle$afterKeyboardTick ]
-[20:00:50] [Render thread/INFO] (eagle) [Eagle] SMOKE-TEST 1 MinecraftClient handlers = [handler$zzi000$eagle$paceHeldRightClick ]
-[20:00:50] [Render thread/INFO] (eagle) [Eagle] SMOKE-TEST 1 Mouse handlers = [handler$zzj000$eagle$aimAssist ]
-[20:00:50] [Render thread/INFO] (eagle) [Eagle] SMOKE-TEST 1 ClientPlayNetworkHandler handlers = [handler$zzg000$eagle$clientCommand ]
-[20:00:50] [Render thread/INFO] (eagle) [Eagle] SMOKE-TEST 2 handle(".inv speed 0.85") = true -> delay=850ms
-[20:00:50] [Render thread/INFO] (eagle) [Eagle] SMOKE-TEST 2 handle(".inv speed 1.5") = true -> delay=1500ms
-[20:00:50] [Render thread/INFO] (eagle) [Eagle] SMOKE-TEST 2 handle(".inv speed 0.05") = true -> delay=50ms
-[20:00:50] [Render thread/INFO] (eagle) [Eagle] SMOKE-TEST 2 handle(".inv speed 20") = true -> delay=10000ms
-[20:00:50] [Render thread/INFO] (eagle) [Eagle] SMOKE-TEST 2 handle(".inv speed 1.234") = true -> delay=1234ms
-[20:00:50] [Render thread/INFO] (eagle) [Eagle] SMOKE-TEST 2 handle(".inv speed abc") = true -> delay=1234ms
-[20:00:50] [Render thread/INFO] (eagle) [Eagle] SMOKE-TEST 2 handle(".inv speed") = true -> delay=1234ms
-[20:00:50] [Render thread/INFO] (eagle) [Eagle] SMOKE-TEST 2 handle(".inv") = true -> delay=1234ms
-[20:00:50] [Render thread/INFO] (eagle) [Eagle] SMOKE-TEST 2 handle(".hello") = false -> delay=1234ms
-[20:00:50] [Render thread/INFO] (eagle) [Eagle] SMOKE-TEST 2 handle("hello") = false -> delay=1234ms
-[20:00:50] [Render thread/INFO] (eagle) [Eagle] SMOKE-TEST 2 handle("   .inv speed 0.4   ") = true -> delay=400ms
-[20:00:50] [Render thread/INFO] (eagle) [Eagle] SMOKE-TEST 2 handle("/inv speed 1") = false -> delay=400ms
+[20:59:27] [main/INFO] (FabricLoader/Mixin) SpongePowered MIXIN Subsystem Version=0.8.7 Source=file:/C:/Users/mineo/.gradle/caches/modules-2/files-2.1/net.fabricmc/sponge-mixin/0.16.3+mixin.0.8.7/3e535042688d1265447e52ad86950b7d9678a5fa/sponge-mixin-0.16.3+mixin.0.8.7.jar Service=Knot/Fabric Env=CLIENT
+[20:59:27] [main/INFO] (FabricLoader/Mixin) Loaded Fabric development mappings for mixin remapper!
+[20:59:27] [main/INFO] (FabricLoader/Mixin) Compatibility level set to JAVA_21
+[20:59:31] [main/INFO] (FabricLoader/MixinExtras|Service) Initializing MixinExtras via com.llamalad7.mixinextras.service.MixinExtrasServiceImpl(version=0.5.0).
+[20:59:33] [Datafixer Bootstrap/INFO] (Minecraft) 243 Datafixer optimizations took 1032 milliseconds
+[20:59:50] [Render thread/INFO] (Minecraft) Environment: Environment[sessionHost=https://sessionserver.mojang.com, servicesHost=https://api.minecraftservices.com, name=PROD]
+[20:59:50] [Render thread/INFO] (Minecraft) Setting user: Player537
+[20:59:51] [Render thread/INFO] (Indigo) [Indigo] Registering Indigo renderer!
+[20:59:51] [Render thread/INFO] (eagle) [Eagle] SMOKE-TEST 1 KeyboardInput handlers = [handler$zod000$eagle$afterKeyboardTick ]
+[20:59:52] [Render thread/INFO] (eagle) [Eagle] SMOKE-TEST 1 MinecraftClient handlers = [handler$zoe000$eagle$paceHeldRightClick ]
+[20:59:52] [Render thread/INFO] (eagle) [Eagle] SMOKE-TEST 1 Mouse handlers = [handler$zof000$eagle$aimAssist ]
+[20:59:52] [Render thread/INFO] (eagle) [Eagle] SMOKE-TEST 1 ClientPlayNetworkHandler handlers = [handler$zob000$eagle$clientCommand ]
+[20:59:52] [Render thread/INFO] (eagle) [Eagle] SMOKE-TEST 1 EntityRenderer handlers = [handler$zoc000$eagle$espLabel ]
+[20:59:52] [Render thread/INFO] (eagle) [Eagle] SMOKE-TEST 2 rotationTo south-down = yaw -0.0 pitch 45.0
+[20:59:52] [Render thread/INFO] (eagle) [Eagle] SMOKE-TEST 3 turn step 1 of 28deg toward (90,45) -> arrived=false
+[20:59:52] [Render thread/INFO] (eagle) [Eagle] SMOKE-TEST 3 turn step 2 of 28deg toward (90,45) -> arrived=false
+[20:59:52] [Render thread/INFO] (eagle) [Eagle] SMOKE-TEST 3 turn step 3 of 28deg toward (90,45) -> arrived=false
+[20:59:52] [Render thread/INFO] (eagle) [Eagle] SMOKE-TEST 3 turn step 4 of 28deg toward (90,45) -> arrived=true
+[20:59:52] [Render thread/INFO] (eagle) [Eagle] SMOKE-TEST 4 Movement[Eagle=11 SafePad=3 ] Combat[AimAssist=12 ] Player[InvChest=4 BlockIn=6 ] Render[ESP=7 ] 
+[20:59:52] [Render thread/INFO] (eagle) [Eagle] SMOKE-TEST 5 BlockInLogic callable, working=false
