@@ -1,10 +1,11 @@
 {
   "category.eagle": "Eagle",
   "key.eagle.toggle": "Toggle Eagle",
-  "key.eagle.pad": "Toggle Safety Pad",
+  "key.eagle.autoarmour": "Toggle AutoArmour",
   "key.eagle.aim": "Toggle Aim Assist",
   "key.eagle.invchest": "Toggle Chest Looter",
   "key.eagle.esp": "Toggle ESP",
   "key.eagle.gui": "Open GUI",
-  "key.eagle.blockin": "Toggle BlockIn"
+  "key.eagle.blockin": "Toggle BlockIn",
+  "key.eagle.remoteshop": "Reopen Remote Shop"
 }

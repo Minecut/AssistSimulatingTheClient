@@ -7,9 +7,12 @@
     "ChatCommandMixin",
     "EntityFlagsMixin",
     "EntityRendererMixin",
+    "HandledScreenMixin",
     "KeyboardInputMixin",
     "MinecraftClientMixin",
-    "MouseMixin"
+    "MinecraftClientSessionMixin",
+    "MouseMixin",
+    "MultiplayerScreenMixin"
   ],
   "injectors": {
     "defaultRequire": 1

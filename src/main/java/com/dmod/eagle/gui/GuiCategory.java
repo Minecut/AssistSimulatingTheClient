@@ -3,14 +3,16 @@ package com.dmod.eagle.gui;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.dmod.eagle.AccountLogic;
 import com.dmod.eagle.AimAssistLogic;
+import com.dmod.eagle.AutoArmourLogic;
 import com.dmod.eagle.BlockInLogic;
 import com.dmod.eagle.EagleClient;
 import com.dmod.eagle.EagleConfig;
 import com.dmod.eagle.EagleLogic;
 import com.dmod.eagle.EspLogic;
 import com.dmod.eagle.InvChestLogic;
-import com.dmod.eagle.SafePadLogic;
+import com.dmod.eagle.RemoteShopLogic;
 
 /** A column of the click GUI: a name, an accent colour, and its modules. */
 public final class GuiCategory {
@@ -83,15 +85,6 @@ public final class GuiCategory {
                         number("CPS Max", 1.0D, 20.0D, 1, () -> cfg.cpsMax, v -> cfg.cpsMax = v),
                         bool("Require Block", () -> cfg.cpsRequireBlock, v -> cfg.cpsRequireBlock = v))));
 
-        // ------------------------------------------------------------------ SafePad
-        movement.modules.add(new GuiModule(
-                "SafePad", EagleClient::keyPad,
-                () -> cfg.safePadEnabled, value -> cfg.safePadEnabled = value, SafePadLogic::reset,
-                List.of(
-                        number("Cooldown", 0.0D, 40.0D, 0, () -> cfg.safePadCooldownTicks, v -> cfg.safePadCooldownTicks = (int) v),
-                        bool("Fall Rescue", () -> cfg.safePadFallRescue, v -> cfg.safePadFallRescue = v),
-                        number("Rescue Fall Speed", 0.0D, 2.0D, 2, () -> cfg.safePadRescueMinFallSpeed, v -> cfg.safePadRescueMinFallSpeed = v))));
-
         // ------------------------------------------------------------------ AimAssist
         combat.modules.add(new GuiModule(
                 "AimAssist", EagleClient::keyAim,
@@ -119,6 +112,29 @@ public final class GuiCategory {
                         number("Min Tier", 1.0D, 5.0D, 0, () -> cfg.invChestMinTier, v -> cfg.invChestMinTier = (int) v),
                         bool("Skip Existing", () -> cfg.invChestSkipExisting, v -> cfg.invChestSkipExisting = v),
                         bool("Close When Done", () -> cfg.invChestCloseWhenDone, v -> cfg.invChestCloseWhenDone = v))));
+
+        // ------------------------------------------------------------------ AutoArmour
+        player.modules.add(new GuiModule(
+                "AutoArmour", EagleClient::keyAutoArmour,
+                () -> cfg.autoArmourEnabled, value -> cfg.autoArmourEnabled = value, AutoArmourLogic::reset,
+                List.of(
+                        number("Delay", 50.0D, 5000.0D, 0, () -> cfg.autoArmourDelayMs, v -> cfg.autoArmourDelayMs = (int) v),
+                        bool("Keep Elytra", () -> cfg.autoArmourKeepElytra, v -> cfg.autoArmourKeepElytra = v),
+                        bool("Idle Only", () -> cfg.autoArmourIdleOnly, v -> cfg.autoArmourIdleOnly = v))));
+
+        // ------------------------------------------------------------------ Account
+        player.modules.add(new GuiModule(
+                "Account", null,
+                () -> cfg.customNameEnabled, value -> cfg.customNameEnabled = value, AccountLogic::reset,
+                List.of(
+                        bool("Custom Name", () -> cfg.customNameEnabled, v -> cfg.customNameEnabled = v))));
+
+        // ------------------------------------------------------------------ RemoteShop
+        player.modules.add(new GuiModule(
+                "RemoteShop", EagleClient::keyRemoteShop,
+                () -> cfg.remoteShopEnabled, value -> cfg.remoteShopEnabled = value, RemoteShopLogic::reset,
+                List.of(
+                        bool("Keep On Close", () -> cfg.remoteShopEnabled, v -> cfg.remoteShopEnabled = v))));
 
         // ------------------------------------------------------------------ BlockIn
         player.modules.add(new GuiModule(

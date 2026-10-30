@@ -17,9 +17,9 @@ import net.minecraft.world.World;
  * Walls the player in.
  *
  * <p>While enabled it keeps the four blocks beside the player filled, optionally a second layer at
- * head height and optionally the corners too. Placement goes through the same
- * {@link BlockPlacement} primitives SafePad uses, so a block is placed by synthesising the hit result
- * a right-click would produce and handing it to {@code interactBlock}.
+ * head height and optionally the corners too. Placement goes through the shared
+ * {@link BlockPlacement} primitives, so a block is placed by synthesising the hit result a
+ * right-click would produce and handing it to {@code interactBlock}.
  *
  * <p><b>The rotation is the interesting part.</b> Reaching the face of a block beside you means aiming
  * well away from where you are looking, and doing that in one tick is exactly the kind of perfectly

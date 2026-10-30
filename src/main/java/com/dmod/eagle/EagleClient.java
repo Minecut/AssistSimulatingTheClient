@@ -4,7 +4,9 @@ import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.dmod.eagle.gui.DynamicIsland;
 import com.dmod.eagle.gui.EagleScreen;
+import com.dmod.eagle.gui.ToastManager;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -12,6 +14,7 @@ import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.rendering.v1.HudLayerRegistrationCallback;
 import net.fabricmc.fabric.api.client.rendering.v1.IdentifiedLayer;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.option.KeyBinding;
@@ -28,11 +31,12 @@ public class EagleClient implements ClientModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     private static KeyBinding toggleKey;
-    private static KeyBinding padToggleKey;
+    private static KeyBinding autoArmourToggleKey;
     private static KeyBinding aimToggleKey;
     private static KeyBinding invChestToggleKey;
     private static KeyBinding espToggleKey;
     private static KeyBinding blockInToggleKey;
+    private static KeyBinding remoteShopKey;
     private static KeyBinding guiKey;
 
     /**
@@ -45,8 +49,8 @@ public class EagleClient implements ClientModInitializer {
         return toggleKey;
     }
 
-    public static KeyBinding keyPad() {
-        return padToggleKey;
+    public static KeyBinding keyAutoArmour() {
+        return autoArmourToggleKey;
     }
 
     public static KeyBinding keyAim() {
@@ -65,6 +69,10 @@ public class EagleClient implements ClientModInitializer {
         return blockInToggleKey;
     }
 
+    public static KeyBinding keyRemoteShop() {
+        return remoteShopKey;
+    }
+
     @Override
     public void onInitializeClient() {
         EagleConfig.get();
@@ -75,10 +83,10 @@ public class EagleClient implements ClientModInitializer {
                 GLFW.GLFW_KEY_V,
                 "category.eagle"));
 
-        padToggleKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key.eagle.pad",
+        autoArmourToggleKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.eagle.autoarmour",
                 InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_B,
+                GLFW.GLFW_KEY_F6,
                 "category.eagle"));
 
         aimToggleKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
@@ -111,8 +119,16 @@ public class EagleClient implements ClientModInitializer {
                 GLFW.GLFW_KEY_K,
                 "category.eagle"));
 
-        ClientTickEvents.START_CLIENT_TICK.register(SafePadLogic::onStartTick);
+        remoteShopKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.eagle.remoteshop",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_H,
+                "category.eagle"));
+
         ClientTickEvents.END_CLIENT_TICK.register(InvChestLogic::onEndTick);
+        ClientTickEvents.END_CLIENT_TICK.register(AutoArmourLogic::onEndTick);
+        ClientTickEvents.END_CLIENT_TICK.register(AccountLogic::onEndTick);
+        ClientTickEvents.END_CLIENT_TICK.register(RemoteShopLogic::onEndTick);
         ClientTickEvents.END_CLIENT_TICK.register(EspLogic::onEndTick);
         ClientTickEvents.END_CLIENT_TICK.register(BlockInLogic::onEndTick);
         ClientTickEvents.END_CLIENT_TICK.register(this::onEndClientTick);
@@ -124,8 +140,25 @@ public class EagleClient implements ClientModInitializer {
                         Identifier.of(MOD_ID, "hud"),
                         (DrawContext context, RenderTickCounter tickCounter) -> EagleHud.render(context))));
 
-        LOGGER.info("[Eagle] ready (V = eagle, B = safety pad, R = aim assist, N = chest looter, "
-                + "G = esp, K = block in, Right Shift = GUI)");
+        HudLayerRegistrationCallback.EVENT.register(drawer -> drawer.addLayer(
+                IdentifiedLayer.of(
+                        Identifier.of(MOD_ID, "toast"),
+                        (DrawContext context, RenderTickCounter tickCounter) -> ToastManager.renderHud(context))));
+
+        HudLayerRegistrationCallback.EVENT.register(drawer -> drawer.addLayer(
+                IdentifiedLayer.of(
+                        Identifier.of(MOD_ID, "island"),
+                        (DrawContext context, RenderTickCounter tickCounter) -> DynamicIsland.renderHud(context))));
+
+        // Screens draw over the HUD, so the notice needs a second home on top of whatever is open.
+        ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) ->
+                ScreenEvents.afterRender(screen).register((rendered, context, mouseX, mouseY, tickDelta) -> {
+                    DynamicIsland.renderScreen(context);
+                    ToastManager.renderScreen(context);
+                }));
+
+        LOGGER.info("[Eagle] ready (V = eagle, F6 = auto armour, R = aim assist, N = chest looter, "
+                + "G = esp, K = block in, H = remote shop, Right Shift = GUI)");
     }
 
     private void onEndClientTick(MinecraftClient mc) {
@@ -134,6 +167,14 @@ public class EagleClient implements ClientModInitializer {
 
         handleGuiKey(mc);
 
+        // H brings the stashed container back. Presses are always drained, so one that lands while a
+        // window is already open cannot fire later when it closes.
+        while (remoteShopKey.wasPressed()) {
+            if (mc.currentScreen == null) {
+                RemoteShopLogic.reopen(mc);
+            }
+        }
+
         while (toggleKey.wasPressed()) {
             cfg.enabled = !cfg.enabled;
             EagleLogic.reset();
@@ -141,11 +182,11 @@ public class EagleClient implements ClientModInitializer {
             notify(mc, "Eagle", cfg.enabled);
         }
 
-        while (padToggleKey.wasPressed()) {
-            cfg.safePadEnabled = !cfg.safePadEnabled;
-            SafePadLogic.reset();
+        while (autoArmourToggleKey.wasPressed()) {
+            cfg.autoArmourEnabled = !cfg.autoArmourEnabled;
+            AutoArmourLogic.reset();
             changed = true;
-            notify(mc, "SafePad", cfg.safePadEnabled);
+            notify(mc, "AutoArmour", cfg.autoArmourEnabled);
         }
 
         while (aimToggleKey.wasPressed()) {
@@ -207,6 +248,10 @@ public class EagleClient implements ClientModInitializer {
     }
 
     private static void notify(MinecraftClient mc, String module, boolean on) {
+        // The island announcement rides along with the chat line, so every keybind toggle gets it
+        // from one place instead of six.
+        DynamicIsland.flash(module, on);
+
         if (mc.player == null) {
             return;
         }

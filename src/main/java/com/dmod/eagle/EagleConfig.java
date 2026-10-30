@@ -62,6 +62,9 @@ public final class EagleConfig {
     /** Draw the small state readout in the top left corner. */
     public boolean showHud = true;
 
+    /** Draw the clock pill at the top of the screen, with its toggle announcements. */
+    public boolean showIsland = true;
+
     // ------------------------------------------------------------------ right click pacing
 
     /**
@@ -81,23 +84,6 @@ public final class EagleConfig {
      * booster never clicks on its own in any case, this just narrows when it joins in.
      */
     public boolean cpsRequireBlock = true;
-
-    // ------------------------------------------------------------------ safe pad
-
-    /**
-     * Master switch of the safety pad. Off by default, because it is the only part of this mod that
-     * changes the world, so enabling it should be an explicit choice. Bound to {@code B} in game.
-     */
-    public boolean safePadEnabled = false;
-
-    /** Ticks to wait between two pad placements, so a failing placement cannot spam packets. */
-    public int safePadCooldownTicks = 2;
-
-    /** Also catch the player once already airborne and falling, by padding straight underneath. */
-    public boolean safePadFallRescue = true;
-
-    /** Minimum downward speed, in blocks per tick, before the fall rescue engages. */
-    public double safePadRescueMinFallSpeed = 0.08D;
 
     // ------------------------------------------------------------------ aim assist
 
@@ -174,6 +160,41 @@ public final class EagleConfig {
 
     /** Close the container once nothing is left to take. */
     public boolean invChestCloseWhenDone = false;
+
+    // ------------------------------------------------------------------ auto armour
+
+    /** Master switch of AutoArmour. Independent of everything else. Bound to {@code F6} in game. */
+    public boolean autoArmourEnabled = false;
+
+    // ------------------------------------------------------------------ account
+
+    /** Swap the client session for an offline one carrying {@link #customName}. */
+    public boolean customNameEnabled = false;
+
+    /** The offline name to connect with. Set in game with {@code .name <name>}. */
+    public String customName = "";
+
+    // ------------------------------------------------------------------ remote shop
+
+    /**
+     * Keep a container alive after closing it, and bring it back with the H key. Bound to {@code H}.
+     */
+    public boolean remoteShopEnabled = false;
+
+    /** Milliseconds between two equipment swaps. One piece is handled per interval. */
+    public int autoArmourDelayMs = 300;
+
+    /** Leave an equipped elytra alone instead of replacing it with a chestplate. */
+    public boolean autoArmourKeepElytra = true;
+
+    /**
+     * Only swap while the player is standing still.
+     *
+     * <p>Clicking inventory slots mid-sprint is exactly what movement checks look for, so the honest
+     * way to stay under them is to not do it - the swap waits until the player settles rather than
+     * pretending the click came from somewhere else.
+     */
+    public boolean autoArmourIdleOnly = true;
 
     // ------------------------------------------------------------------ esp
 
@@ -261,8 +282,6 @@ public final class EagleConfig {
         releaseMargin = clamp(releaseMargin, 0.0D, 0.30D);
         sneakDelayMs = (int) clamp(sneakDelayMs, 0, 200);
         releaseDelayMs = (int) clamp(releaseDelayMs, 0, 1000);
-        safePadCooldownTicks = (int) clamp(safePadCooldownTicks, 0, 40);
-        safePadRescueMinFallSpeed = clamp(safePadRescueMinFallSpeed, 0.0D, 2.0D);
         cpsMin = clamp(cpsMin, 1.0D, 20.0D);
         cpsMax = clamp(cpsMax, 1.0D, 20.0D);
         aimMaxAngle = clamp(aimMaxAngle, 1.0D, 180.0D);
@@ -275,6 +294,14 @@ public final class EagleConfig {
         }
         invChestDelayMs = (int) clamp(invChestDelayMs, INV_CHEST_MIN_DELAY_MS, INV_CHEST_MAX_DELAY_MS);
         invChestMinTier = (int) clamp(invChestMinTier, 1, 5);
+        autoArmourDelayMs = (int) clamp(autoArmourDelayMs, 50, 5000);
+        if (customName == null) {
+            customName = "";
+        }
+        customName = customName.trim();
+        if (customName.length() > 16) {
+            customName = customName.substring(0, 16);
+        }
         espRange = clamp(espRange, 4.0D, 256.0D);
         espRefreshTicks = (int) clamp(espRefreshTicks, 1, 40);
         blockInLayers = (int) clamp(blockInLayers, 1, 2);

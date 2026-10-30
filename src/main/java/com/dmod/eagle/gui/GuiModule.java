@@ -49,6 +49,9 @@ public final class GuiModule {
         if (this.onToggle != null) {
             this.onToggle.run();
         }
+
+        // Same announcement the keybinds produce, so the island reacts no matter where you toggled.
+        DynamicIsland.flash(this.name, isEnabled());
     }
 
     /** Height of the settings block right now, animation included. */

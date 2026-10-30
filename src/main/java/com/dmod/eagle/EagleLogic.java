@@ -101,13 +101,6 @@ public final class EagleLogic {
 
         ClientPlayerEntity player = mc.player;
 
-        // The safety pad takes priority: when it just managed to lay a block down, the player is meant
-        // to keep walking, not to be stopped at the edge. Eagle stays armed as its fallback.
-        if (SafePadLogic.isPlacing()) {
-            reset();
-            return false;
-        }
-
         if (!isEligible(player, cfg)) {
             reset();
             return false;

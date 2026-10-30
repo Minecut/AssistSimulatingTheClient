@@ -5,33 +5,31 @@
 2.此客户端用于模组测试，不要服务器使用
 3.如果造成封禁后果概不负责
 ------------
-七个模块，各自独立开关：
+九个模块，各自独立开关：
 
 | 模块 | 行为 | 开关 | 默认 |
 | --- | --- | --- | --- |
 | **Eagle · 潜行** | 快踩空时替你按 Shift，用原版潜行挡住你 | `V` | 开 |
 | **Eagle · 右键提速** | 长按右键时把放置节奏提到 6~9 CPS | 同 `V` | 开 |
-| **SafePad** | 快踩空时在脚下补一块方块，让你继续走 | `B` | **关** |
+| **AutoArmour** | 自动识别并穿上背包里最好的盔甲 | `F6` | **关** |
 | **AimAssist** | 往目标方向修正鼠标向量，镜头真的转过去 | `R` | **关** |
 | **InvChest** | 打开箱子后每 0.85 秒取一件，高级物品优先 | `N` | **关** |
 | **ESP** | 透墙高亮玩家轮廓与名字，带距离 | `G` | **关** |
 | **BlockIn** | 自动在自己四周砌墙把自己围住，平滑转头 | `K` | **关** |
+| **Account** | 换成自定义名字的离线账户 | 多人界面按钮 | **关** |
+| **RemoteShop** | 关掉箱子/商店后不真正关闭，按 H 随时唤回 | `H` | **关** |
 
 按 **右 Shift** 打开 ClickGUI，所有开关和参数都能在里面直接调。
 
 聊天框里的客户端指令（`.inv speed <秒>`）可以随时调 InvChest 的节奏，详见第四节。
 
-Eagle 只改输入记录和原版的放置冷却计数，**永远不动世界**；SafePad 会真的放置方块，
-AimAssist 会真的转动镜头，InvChest 会真的取走箱子里的东西，所以后三个默认关闭，需要你手动开。
+Eagle 只改输入记录和原版的放置冷却计数，**永远不动世界**；BlockIn 会真的放置方块，
+AimAssist 会真的转动镜头，InvChest 会真的取走箱子里的东西，所以它们默认关闭，需要你手动开。
 
-SafePad 与 Eagle 同时开启时 **SafePad 优先**：它成功放下方块的那一 tick，Eagle 会让开，
-让你保持全速前进；一旦 SafePad 放不下去（手上没方块、够不着、被挡住），Eagle 立刻接管把你拦在边缘。
-这就是「兜底的兜底」。
-
-AimAssist、InvChest 和 ESP 与前三个都无关，各自独立，`enabled`（V 键）不影响它们。
+AimAssist、InvChest、ESP、AutoArmour、BlockIn 与 Eagle 都无关，各自独立，`enabled`（V 键）不影响它们。
 ESP 是纯本地显示，不改任何游戏状态。
 
-**右 Shift 打开的 ClickGUI**（第六节）把五个模块的全部参数放在一起调，
+**右 Shift 打开的 ClickGUI**（第六节）把八个模块的全部参数放在一起调，
 它和热键、聊天指令读写的是同一份配置，不存在两边不一致的问题。
 
 * Minecraft **1.21.4** / Fabric Loader ≥ 0.16 / Fabric API / Java 21
@@ -61,8 +59,6 @@ world.isSpaceEmpty(player, probe)   // 返回 true 说明前方脚下是空气
 1. `player.input.movementForward / movementSideways`（键盘，同刻生效，最灵敏）
 2. 水平速度（处理被推动的情况）
 3. 上一次的已知方向（**在边缘停下放方块时保持潜行**）
-
-同一套探针判定被 SafePad 复用，两个模块对「危险」的定义完全一致。
 
 ### 2. 执行：只改原版的输入记录
 
@@ -129,53 +125,77 @@ handleInputEvents()  // if (useKey.isPressed() && itemUseCooldown == 0 && !isUsi
 
 ---
 
-## 二、SafePad：垫块兜底
+## 二、AutoArmour：自动换甲
 
-只取神桥里**和放置有关**的那部分，不做自动跳跃、不做自动后退/对角线移动控制。
+按 **F6** 开关。每 `autoArmourDelayMs`（默认 **300ms**）检查一次，把背包里最好的盔甲穿上。
 
-### 1. 两种触发
+### 1. 怎么把盔甲穿上
 
-* **预测型（没路了）**——站在地面上，Eagle 用的同一根探针报告前方地面断了。
-  就在你**正前方、与你脚下那块同一层**的位置补一块。
-* **补救型（要摔了）**——已经在空中且向下速度超过 `safePadRescueMinFallSpeed`。
-  直接在你**正下方**补一块。
-
-预测型做的是「沿移动方向的主轴走整整一格」，而不是你碰撞箱正前方那个点。
-这样目标方块永远和你脚下那块**共面相邻**，才能找到可以点击的面——
-对角线方向没有「对角面」可点，所以斜着走时会退化成先补主轴那一格。
-
-### 2. 静默旋转
-
-这是神桥最核心的机制，也是这个模块不需要拽你镜头的原因。
-放置只需要服务端认为你在看着目标面，客户端镜头完全不用动：
+用的是玩家**自己的**物品栏 handler——它在没有打开任何界面时也是同步的，所以直接朝它发 shift-click 就行。
+而 shift-click 一件盔甲本来就是原版会做的事：`PlayerScreenHandler.quickMove` 会认出
+`EquipmentSlot.Type.HUMANOID_ARMOR` 并把它挪过去。
 
 ```java
-network.sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(yaw, pitch, onGround, false));
-mc.interactionManager.interactBlock(player, hand, hit);   // 由原版负责发包和 sequence
-network.sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(realYaw, realPitch, onGround, false));
+mc.interactionManager.clickSlot(handler.syncId, slot, 0, SlotActionType.QUICK_MOVE, player);
 ```
 
-两个细节是踩过的坑：
+槽位号没有硬编码，用的是原版自己的常量（实测 `EQUIPMENT_START=5`、`INVENTORY_START=9`）：
 
-* `LookAndOnGround` 在 1.21.4 是 **4 参构造** `(yaw, pitch, onGround, horizontalCollision)`。
-  第 4 个是**水平碰撞标志**，不是 `changeLook`——`changePosition=false` / `changeLook=true`
-  是构造器里硬编码的。
-* **恢复包不是可选项**。客户端只在自己视角变化时才重发朝向，
-  所以如果只发欺骗包不恢复，服务端会一直卡在「低头看着脚」的状态。
+* 某个盔甲槽 = `EQUIPMENT_START + (3 - equipmentSlot.getEntitySlotId())`
+* 候选来源 = `INVENTORY_START` 起 36 格（27 主背包 + 9 快捷栏）
 
-### 3. 放置本身完全是原版
+**这里有个坑**：`PlayerScreenHandler.quickMove` 的盔甲分支带一个条件——
+`!this.slots.get(...).hasStack()`，也就是**只有盔甲槽是空的时候才会穿上去**。
+所以替换必须点两次：先把旧的 shift-click 挪回背包，再把新的 shift-click 穿上。
 
-没有手搓 `PlayerInteractBlockC2SPacket`。构造一个 `BlockHitResult` 交给
-`ClientPlayerInteractionManager.interactBlock(...)`——这正是你右键点方块时走的那条路。
-客户端预测、sequence 计数、发包全部由游戏自己的代码处理。
+盔甲不能堆叠，所以第二次点击不可能干扰第一次，候选的槽位号也不会移位——
+这就是为什么可以在同一 tick 里连着发这两个包。
 
-目标面的挑选顺序是「下方邻居的顶面 → 四个水平邻居 → 上方邻居的底面」，
-所以平地边缘、竖直墙面、天花板下面都能找到支撑。
+### 2. 「最好」怎么算
 
-### 4. 与 Eagle 的优先级
+```
+分数 = 材质等级 × 10000 + 附魔等级总和 × 500 + 剩余耐久比例 × 200
+```
 
-`EagleLogic` 在判定前先看 `SafePadLogic.isPlacing()`。SafePad 刚放下方块的这一 tick，
-Eagle 直接让开，你保持全速前进；SafePad 放不下去时，Eagle 按原样拦你。
+材质等级：下界合金 6 > 钻石 5 > 海龟壳 4 > 铁 3 > 锁链 2 > 金 1 > 皮革 0。
+
+**材质的权重是故意做得极大的**：说「最好的盔甲」指的是最好的**材质**，
+不该出现一堆附魔让皮革帽压过光板钻石头。附魔和耐久只在同材质之间分高下。
+
+实测排序严格单调：
+
+```
+LEATHER 200  <  GOLD 10200  <  CHAIN 20200  <  IRON 30200
+             <  TURTLE 40200  <  DIAMOND 50200  <  NETHERITE 60200
+```
+
+耐久项也真的生效：磨损到 160 的铁头盔是 **30006**，低于全新的 **30200**，所以快坏的会被换掉。
+
+### 3. 静止闸门
+
+`autoArmourIdleOnly` 默认开启：**疾跑中或还在移动时，换甲整个挂起，站定之后才继续。**
+
+```java
+if (cfg.autoArmourIdleOnly && (player.isSprinting()
+        || player.getVelocity().horizontalLengthSquared() > 1.0E-4D)) {
+    return;   // 站定再换
+}
+```
+
+阈值是 0.01 格/刻（约 0.2 格/秒），站立时水平速度是 0，所以走起来就停、站住就恢复。
+
+这不是「让检测看不见」，而是**让那个动作根本不发生**：在移动时点物品栏格子本身就是一条违规，
+不管包怎么包装都还是。所以这里的做法是等——慢一点，但不需要对服务端说任何假话。
+
+不想要的话在 GUI 的 AutoArmour 里把 `Idle Only` 关掉。
+
+### 4. 其他
+
+* **一次只处理一件**，而不是四件一起换。整套换完 4 件约 1.2 秒，
+  看起来像一串有节奏的切换，而不是一串爆发包。
+* **打开任何界面时不动手**——那时候 `player.currentScreenHandler` 是别人的，
+  朝玩家的 handler 发包会指错对象。* `autoArmourKeepElytra` 默认开：胸甲位置穿着鞘翅时跳过，不会把你飞行中的鞘翅换成胸甲。
+* 鞘翅本身也不会被当作候选穿上（它的护甲值是 0）。
 
 ---
 
@@ -453,12 +473,11 @@ HUD 上的 `[N]` 就是当前追踪数量，方便你确认它没有失控。
 ### 1. 布局与交互
 
 ```
-┌─ Movement ─────┐ ┌─ Combat ──────┐ ┌─ Player ──────┐ ┌─ Render ──────┐
-│ ■ Eagle    V ▼ │ │ □ AimAssist R │ │ □ InvChest  N │ │ □ ESP       G │
-│   Edge Offset  │ │   ...         │ │   ...         │ │   ...         │
-│   Release Marg │ │               │ │               │ │               │
-│ □ SafePad  B   │ │               │ │               │ │               │
-└────────────────┘ └───────────────┘ └───────────────┘ └───────────────┘
+┌─ Movement ─────┐ ┌─ Combat ──────┐ ┌─ Player ────────┐ ┌─ Render ──────┐
+│ ■ Eagle    V ▼ │ │ □ AimAssist R │ │ □ InvChest    N │ │ □ ESP       G │
+│   Edge Offset  │ │   Max Angle   │ │ □ AutoArmour F6 │ │   Range       │
+│   Release Marg │ │   Distance    │ │ □ BlockIn     K │ │   Refresh     │
+└────────────────┘ └───────────────┘ └─────────────────┘ └───────────────┘
 ```
 
 * **点左边的方块** → 开关模块（方块填色 = 开，深灰 = 关）
@@ -518,7 +537,7 @@ GUI 里每个设置项都是直接读写 `EagleConfig` 的字段的 lambda，不
 
 ### 1. 放置
 
-复用 SafePad 那套原语（现在抽成了 `BlockPlacement`）：找到目标方块旁边可点击的支撑面，
+用的是一套共用放置原语 `BlockPlacement`：找到目标方块旁边可点击的支撑面，
 构造 `BlockHitResult`，交给 `ClientPlayerInteractionManager.interactBlock`。
 客户端预测、sequence、发包仍然是原版的。
 
@@ -569,20 +588,268 @@ aimPitch += deltaPitch / distance * maxStep;
 
 ---
 
-## 八、安装
+## 八、Account：离线换号
 
-1. 装好 **Fabric Loader**（≥ 0.16）和一个 **1.21.4** 的档案
-2. 下载 **Fabric API**（1.21.4 版）放进 `mods`
-3. 把 `eagle-1.8.0.jar` 放进 `mods`
-4. 启动游戏，进世界后按 **V** 开关 Eagle，**B** 开关 SafePad，**R** 开关 AimAssist，
-   **N** 开关 InvChest，**G** 开关 ESP，**K** 开关 BlockIn，**右 Shift** 打开 GUI
+**在多人游戏界面左上角点「Offline Account」按钮**。整个账户就是一个字段。
 
-左上角显示 `Eagle ON [sneak]  CPS ON [hold]  Pad OFF  Aim OFF  Inv OFF  ESP OFF` 之类的实时状态。
-聊天框里输入 `.inv speed 0.85` 可以直接调 InvChest 的取物间隔。
+### 1. 为什么按钮在多人游戏界面
+
+客户端拿哪个账户去连服务器，是在**建立连接时**决定的，所以改它的地方就在你选服务器的地方。
+按钮由一处 Mixin 追加到 `MultiplayerScreen.init()` 的末尾，不重建列表、不动原版任何按钮：
+
+```java
+@Inject(method = "init", at = @At("TAIL"))
+private void eagle$accountButton(CallbackInfo ci) {
+    addDrawableChild(ButtonWidget.builder(Text.literal("Offline Account"),
+            button -> this.client.setScreen(new AccountScreen(this)))
+            .dimensions(6, 6, 110, 20).build());
+}
+```
+
+点进去是 `AccountScreen`：一个文本框 + `Enable` / `Original` / `Back` 三个按钮。
+文本框用 `setTextPredicate` 挡掉了游戏会拒绝的字符，所以名字只要出现在框里就是合法的。
+
+那一页**不直接碰 Session**，只改配置标志。真正换号的是 `AccountLogic` 的 tick 处理器，
+这样按钮、手改配置文件、以及以后再加的入口全都走同一条代码路径。
+
+### 2. 为什么替换一个字段就够
+
+`MinecraftClient.session` 是 `private final Session`，而 `getSession()` 返回的就是它。
+登录处理器发给服务端的、集成服务器用来建房主玩家的，读的都是这同一个字段——
+所以把它换掉就是全部功能。
+
+字段是 `final`，accessor 需要 `@Mutable` 才能去掉 final 标志：
+
+```java
+@Mixin(MinecraftClient.class)
+public interface MinecraftClientSessionMixin {
+    @Accessor("session") Session eagle$getSession();
+    @Mutable @Accessor("session") void eagle$setSession(Session session);
+}
+```
+
+### 3. 名字与 UUID 必须自洽
+
+离线 UUID 是这么推的（和原版一致）：
+
+```java
+UUID uuid = UUID.nameUUIDFromBytes(("OfflinePlayer:" + name).getBytes(StandardCharsets.UTF_8));
+new Session(name, uuid, "0", Optional.empty(), Optional.empty(), Session.AccountType.LEGACY);
+```
+
+实测换号结果：`TestPlayer` → `bb77495a-a740-3169-a238-69654c8bd2c1`，
+与独立算出的离线 UUID **完全一致**。
+
+名字校验按原版规则：3~16 个 `[A-Za-z0-9_]`。实测
+`"TestPlayer"=true  "abc"=true  "ab"=false  "aaaaaaaaaaaaaaaaa"=false`
+`"bad name"=false  "bad-name"=false  "Player_1"=true  ""=false`。
+
+### 4. 原来的账户不会丢
+
+第一次覆盖前会把原 Session 存下来，点 `Original` 时**原样放回**。
+实测恢复后是 `sameInstance=true`——放回的是原来那个对象，不是复制出来的。
+
+### 5. 右下角的动画提示
+
+启用和关闭时，右下角会滑出一张卡片，停 2.4 秒再滑走并淡出：
+
+```
+                                    ┌──────────────────────┐
+                                    │▎Offline Account      │
+                                    │ Disabled - back to … │
+                                    └──────────────────────┘
+```
+
+时间线只有三个区段，全部由一个时间戳算出来，没有需要逐帧维护的状态：
+
+```java
+if (elapsed < SLIDE_IN_MS)        progress = elapsed / SLIDE_IN_MS;        // 滑入
+else if (elapsed < IN + HOLD_MS)  progress = 1.0F;                          // 停留
+else                              progress = 1 - (elapsed - IN - HOLD) / OUT; // 滑出
+```
+
+提示必须能画在两个地方：游戏内的 HUD，以及**任何界面之上**——换号发生在多人游戏界面，
+而 HUD 是被那个界面盖住的。所以有两个入口，而且 HUD 那个在有界面时会让位，避免画两遍：
+
+```java
+public static void renderHud(DrawContext ctx)    { if (currentScreen == null) draw(ctx); }
+public static void renderScreen(DrawContext ctx) { draw(ctx); }
+```
+
+界面那一侧用 Fabric 的 `ScreenEvents` 挂到每一个屏幕上：
+
+```java
+ScreenEvents.AFTER_INIT.register((client, screen, w, h) ->
+        ScreenEvents.afterRender(screen).register(
+                (s, context, mouseX, mouseY, tickDelta) -> ToastManager.renderScreen(context)));
+```
+
+### 6. 什么时候生效——这条很重要
+
+**Session 是在建立连接时读取的，所以换名只在【下一次】连服务器或进世界时生效，
+当前这次连接不会改名。**
+
+这是游戏本身的性质，不是这里的取巧。所以：
+
+* 想换名连服务器 → 在多人游戏界面点按钮设好，然后连接（这时就是新名字了）
+* 如果连上之后才改的 → 退出重连才生效
+* 配置里已经启用了的话，**开游戏时就会装好**，第一次连接用的就是新名字
+
+单人存档同理：已经在玩的那个存档不会改名，退出重进才会。
+
+`Custom Name` 的开关也在 ClickGUI 的 **Player** 分类里，和按钮是同一个配置项。
 
 ---
 
-## 九、配置
+## 九、RemoteShop：远程商店
+
+按 **H** 把商店唤回来。关掉商店窗口时不会真的关，只是藏起来。
+
+### 1. 原版的关闭链路只有一条
+
+在 `HandledScreen.close()` 的**开头**就能把它整条拦下来：
+
+```
+HandledScreen.close()
+  → client.player.closeHandledScreen()   // 发 CloseHandledScreenC2SPacket，并重置 currentScreenHandler
+  → Screen.close()  → setScreen(null)    // 界面消失
+```
+
+所以取消这个方法、再自己 `setScreen(null)`，正好得到需要的两半结果：**关闭包没发出去**、
+**界面也确实没了**。`ScreenHandler` 还挂着原来的 sync id，之后用同一个 handler 重建界面就是正常的。
+
+```java
+@Inject(method = "close", at = @At("HEAD"), cancellable = true)
+private void eagle$keepContainerAlive(CallbackInfo ci) {
+    if (!RemoteShopLogic.stash(self)) return;
+    MinecraftClient.getInstance().setScreen(null);
+    ci.cancel();
+}
+```
+
+**选这个方法而不是 `closeHandledScreen()` 是刻意的**：服务器关闭容器走的是
+`ClientPlayNetworkHandler` 那条路，不经过这里。所以这里永远不会去跟「服务端已经认为关掉了」
+的容器对着干——只拦玩家主动关窗。
+
+`setScreen(null)` 仍会跑 `removed()` → `handler.onClosed(player)`，但箱子和潜影盒的 handler
+对这个方法是空实现，所以 handler 完好无损。
+
+### 2. 只收箱子
+
+`GenericContainerScreenHandler`（箱子 / 木桶 / 末影箱 / 发射器…）和 `ShulkerBoxScreenHandler`。
+村民交易那种 `MerchantScreenHandler` **不收**——它的 `onClosed` 会清空报价，藏起来再唤回就是个空商店。
+
+### 3. 自动失效
+
+存的 handler 一旦不是当前的 `currentScreenHandler` 就立刻丢掉：
+
+```java
+if (mc.player.currentScreenHandler != stash) reset();
+```
+
+这一条同时覆盖两种下场：**服务器把容器关了**（客户端的 handler 被重置回玩家自己的），
+和**你又开了别的东西**（handler 被替换）。两种情况存档都已经过期，
+继续显示只会得到一堆被服务端丢弃的点击。
+
+### 4. 决定权在服务端，这条得说清楚
+
+客户端能做的只有「不告诉服务端我关了」。**服务端要不要继续认为这个容器开着，是它的事。**
+
+不少插件会在玩家走远、离开区域、或者进入战斗时主动关掉背包。真出现这种情况，
+上面那条自动失效会让 H 变成无操作——不会给你一个点得动但没反应的幽灵窗口。
+
+所以这个功能在《唤醒战争》里能不能用，取决于那套商店插件有没有距离或区域检查。
+
+另外：如果那是个**真实方块箱子**，服务端会一直认为有人在看，箱盖会保持打开——别人看得见。
+插件自绘的虚拟商店没有这个问题。
+
+---
+
+## 十、灵动岛（顶部时钟）
+
+屏幕正上方有一个药丸形的小岛，平时显示**当前时间**（`HH:mm:ss`，每秒更新），
+任何模块被开关时它会横向撑开，中间滑出 **`[+] 模块名`**（关闭是 `[-] 模块名`），
+停 1.7 秒再收回。
+
+### 1. 形状
+
+「药丸」就是一个圆角半径等于**高度一半**的圆角矩形——高度 18，半径 9，
+`GuiTheme.roundedRect` 逐行内缩绘制，所以没有贴图和 shader 参与。
+
+```java
+int radius = HEIGHT / 2;
+GuiTheme.roundedRect(context, x, TOP, w, HEIGHT, radius, 0xF0121216);
+```
+
+### 2. 动画只有两个平滑量
+
+```java
+presence = approach(presence, flashing ? 1.0F : 0.0F, 0.45F, dt);   // 公告露出多少
+width    = approach(width, idleWidth + (peakWidth - idleWidth) * presence, 0.4F, dt);
+```
+
+宽度目标直接由 `presence` 算出来，所以**药丸的宽度和时间/公告文字的交叉淡化永远同步**，
+不会出现「文字已经换好了但框还没撑开」的错位。
+
+文字是叠在同一中心的：时间按 `1 - presence` 淡出，公告按 `presence` 淡入。
+
+### 3. 时钟每秒才格式化一次
+
+```java
+if (now.getSecond() != lastSecond) { lastSecond = now.getSecond(); clockText = now.format(CLOCK); }
+```
+
+`DateTimeFormatter` 每帧跑一次太浪费，缓存成秒级。
+
+### 4. 挂载点
+
+* 游戏内：`HudLayerRegistrationCallback` 的一个独立 layer，和左侧模块列表分开。
+* 界面上：只有公告进行中才画（`presence > 0.02`），所以时钟是「游戏内」的东西，
+  但你从 ClickGUI 里开关模块时公告会跟过去——那正是需要反馈的地方。
+
+左侧的模块状态列表整体下移了 22px，给顶部的小岛让位。
+
+### 5. 触发点只有两处
+
+* 快捷键：挂在 `notify()` 里，六个开关共用一个汇合点。
+* ClickGUI：挂在 `GuiModule.toggle()` 里，名称直接用行上的名字。
+
+两条路互斥，所以一次开关只会闪一次。
+
+---
+
+## 十一、安装
+
+推荐直接用 **`launch.bat`**，双击即可：
+
+```
+launch.bat        装 jar 到 .minecraft\mods，然后拉起官方启动器
+launch.bat dev    用开发环境直接启动游戏（不经过启动器）
+```
+
+脚本会挑 `build\libs` 里最新的 `eagle-*.jar`（跳过 sources 包），删掉 mods 里的旧版本再复制，
+并检查 Fabric API 和启动器里的 Fabric 档案。设置环境变量 `EAGLE_MC` 可以指向自定义的 `.minecraft`。
+
+> 脚本内容**故意全是 ASCII**：批处理是按字节偏移读取的，UTF-8 文本加上 `chcp 65001`
+> 会让 cmd 在中途丢失位置、把命令行截断。纯 ASCII 绕开整个问题。
+
+手动安装：
+
+1. 装好 **Fabric Loader**（≥ 0.16）和一个 **1.21.4** 的档案
+2. 下载 **Fabric API**（1.21.4 版）放进 `mods`
+3. 把 `eagle-2.4.0.jar` 放进 `mods`
+4. 启动游戏，进世界后按 **V** 开关 Eagle，**F6** 开关 AutoArmour，**R** 开关 AimAssist，
+   **N** 开关 InvChest，**G** 开关 ESP，**K** 开关 BlockIn，**H** 唤回远程商店，
+   **右 Shift** 打开 GUI
+
+换离线账户在**多人游戏界面左上角的 `Offline Account` 按钮**里，不在游戏内。
+
+左上角显示 `Eagle ON  CPS ON  Armour OFF  Aim OFF  Inv OFF  ESP OFF  BI OFF  Name OFF` 之类的实时状态，
+一行放不下会自动换行。聊天框里可以用 `.inv speed 0.85` 调 InvChest 的取物节奏。
+
+---
+
+## 十二、配置
 
 首次启动会生成 `.minecraft/config/eagle.json`：
 
@@ -597,16 +864,12 @@ aimPitch += deltaPitch / distance * maxStep;
   "randomizeDelay": true,
   "onlyWhileBridging": false,
   "showHud": true,
+  "showIsland": true,
 
   "cpsBoostEnabled": true,
   "cpsMin": 6.0,
   "cpsMax": 9.0,
   "cpsRequireBlock": true,
-
-  "safePadEnabled": false,
-  "safePadCooldownTicks": 2,
-  "safePadFallRescue": true,
-  "safePadRescueMinFallSpeed": 0.08,
 
   "aimEnabled": false,
   "aimMaxAngle": 90.0,
@@ -628,6 +891,16 @@ aimPitch += deltaPitch / distance * maxStep;
   "invChestSkipExisting": true,
   "invChestMinTier": 1,
   "invChestCloseWhenDone": false,
+
+  "autoArmourEnabled": false,
+  "autoArmourDelayMs": 300,
+  "autoArmourKeepElytra": true,
+  "autoArmourIdleOnly": true,
+
+  "customNameEnabled": false,
+  "customName": "",
+
+  "remoteShopEnabled": false,
 
   "espEnabled": false,
   "espRange": 64.0,
@@ -653,7 +926,7 @@ aimPitch += deltaPitch / distance * maxStep;
 | 字段 | 默认 | 说明 |
 | --- | --- | --- |
 | `enabled` | `true` | Eagle 总开关，V 键切换 |
-| `edgeOffset` | `0.08` | 探针在身体半宽之外再前移的距离。**调大 = 更早触发 = 更安全，但更不像人**；钳制在 0 ~ 0.30。SafePad 共用这一个值 |
+| `edgeOffset` | `0.08` | 探针在身体半宽之外再前移的距离。**调大 = 更早触发 = 更安全，但更不像人**；钳制在 0 ~ 0.30 |
 | `releaseMargin` | `0.06` | 迟滞量，防止潜行状态抖动 |
 | `keepSneakWhileIdle` | `true` | 停下不动时仍保持潜行。在边缘上放方块很有用 |
 | `sneakDelayMs` | `0` | 检测到边缘后延迟多久才潜行。**不建议调大**，见下方余量换算 |
@@ -661,6 +934,7 @@ aimPitch += deltaPitch / distance * maxStep;
 | `randomizeDelay` | `true` | 把两个延迟随机化到 `0..设定值`，打散固定节奏 |
 | `onlyWhileBridging` | `false` | 只在手持可放置方块时生效 |
 | `showHud` | `true` | 左上角状态显示 |
+| `showIsland` | `true` | 顶部时钟药丸，以及模块开关时的 `[+]` 公告 |
 
 ### Eagle · 右键提速
 
@@ -670,15 +944,6 @@ aimPitch += deltaPitch / distance * maxStep;
 | `cpsMin` | `6.0` | 目标速率下限（次/秒），钳制在 1 ~ 20 |
 | `cpsMax` | `9.0` | 目标速率上限（次/秒），钳制在 1 ~ 20 |
 | `cpsRequireBlock` | `true` | 只在主手拿着可放置方块时提速，也就是「搭路的时候」 |
-
-### SafePad
-
-| 字段 | 默认 | 说明 |
-| --- | --- | --- |
-| `safePadEnabled` | `false` | SafePad 总开关，B 键切换 |
-| `safePadCooldownTicks` | `2` | 两次放置之间的最小间隔（刻）。调太低会在放置反复失败时刷包 |
-| `safePadFallRescue` | `true` | 是否启用「已经在空中」的补救型触发 |
-| `safePadRescueMinFallSpeed` | `0.08` | 补救型触发所需的最小下落速度（格/刻） |
 
 ### AimAssist
 
@@ -708,6 +973,28 @@ aimPitch += deltaPitch / distance * maxStep;
 | `invChestSkipExisting` | `true` | 背包里已经有同种物品就跳过 |
 | `invChestMinTier` | `1` | 最低取用等级 1~5。调到 2 就会把泥土圆石这类垃圾留下 |
 | `invChestCloseWhenDone` | `false` | 没有可取的物品时自动关闭容器 |
+
+### AutoArmour
+
+| 字段 | 默认 | 说明 |
+| --- | --- | --- |
+| `autoArmourEnabled` | `false` | AutoArmour 总开关，F6 键切换。独立模块，不受 `enabled` 约束 |
+| `autoArmourDelayMs` | `300` | 两次换装之间的间隔（毫秒），钳制在 50 ~ 5000。**GUI 里可拖** |
+| `autoArmourKeepElytra` | `true` | 胸甲位穿着鞘翅时跳过，不把飞行中的鞘翅换成胸甲 |
+| `autoArmourIdleOnly` | `true` | 疾跑或移动时挂起换甲，站定后才换。见第二节「静止闸门」 |
+
+### Account
+
+| 字段 | 默认 | 说明 |
+| --- | --- | --- |
+| `customNameEnabled` | `false` | 是否用自定义的离线账户。多人界面按钮和 GUI 里的 `Custom Name` 开关都是它 |
+| `customName` | `""` | 离线名字，3~16 个 `[A-Za-z0-9_]`。在多人游戏界面的 `Offline Account` 里填写 |
+
+### RemoteShop
+
+| 字段 | 默认 | 说明 |
+| --- | --- | --- |
+| `remoteShopEnabled` | `false` | 关掉箱子/商店时只隐藏不关闭，H 键唤回。GUI 里的 `Keep On Close` 开关就是它 |
 
 ### ESP
 
@@ -744,13 +1031,12 @@ aimPitch += deltaPitch / distance * maxStep;
 
 注意玩家碰撞箱 0.6 宽，**整个箱子离开方块才会真的掉下去**。
 探针触发时你离真正坠落还有约 `0.6 + edgeOffset` 格的缓冲，大约 3 刻。
-SafePad 就是吃这个窗口的——所以它每次都能赶在坠落之前把块放下去。
 
 如果调大 `sneakDelayMs`，每 50ms 就吃掉约 0.216 格的余量，**很容易直接摔下去**。
 
 ---
 
-## 十、行为边界
+## 十三、行为边界
 
 **会生效**：站在地面正常行走、搭桥、跑搭、倒退搭、侧向搭。
 
@@ -759,10 +1045,7 @@ SafePad 就是吃这个窗口的——所以它每次都能赶在坠落之前把
 * 创造飞行中、鞘翅滑翔中
 * 游泳 / 水中 / 爬梯 / 骑乘
 * 打开任何 GUI 时
-* 手上没有 `BlockItem`（SafePad 与右键提速专用；Eagle 潜行只在开了 `onlyWhileBridging` 时看这个）
-
-**SafePad 额外不做**：不自动跳跃、不自动后退、不控制你的移动输入、不自动切换快捷栏。
-它只在你已经因为自己的操作走到危险的瞬间补一块。
+* 手上没有 `BlockItem`（自动放置与右键提速专用；Eagle 潜行只在开了 `onlyWhileBridging` 时看这个）
 
 **右键提速额外不做**：玩家不按右键时一次都不点。它只是把原版的 5 CPS 提到 6~9，
 放哪个方块、朝哪个方向、什么时候放，仍然全部由你自己决定。
@@ -778,28 +1061,51 @@ SafePad 就是吃这个窗口的——所以它每次都能赶在坠落之前把
 **ESP 额外不做**：不发任何包、不改任何游戏状态。它只写本地实体上的发光标志（释放时恢复原值）
 和渲染时的名签文字，全部是纯客户端的东西。
 
-**六个模块都不做**：不防摔落伤害、不改位置、不自动攻击、不自动移动。
+**AutoArmour 额外不做**：不丢东西、不整理背包、不碰你的快捷栏。它只做一件事——
+把背包里材质更好的盔甲穿到对应的槽位上，一次一件。
 
-> 关于服务器规则：前五个模块都会向服务端发送自动化输入，在多数服务器的规则下属于作弊。
+**BlockIn 额外不做**：不追着你走、不自动拆、只砌你自己站的那一格四周。
+
+**Account 额外不做**：不改皮肤、不改披风、不动正版账户。它只是把客户端的 Session
+换成一个带自定义名字的离线 Session，并在关闭时原样放回原来的那个。
+
+**RemoteShop 额外不做**：不改服务端的容器状态，也不伪造点击。它只是不告诉服务端「我关了」，
+以及用同一个 handler 重建界面。服务端一旦自己关掉容器，它就立刻失效。
+
+**九个模块都不做**：不防摔落伤害、不改位置、不自动攻击、不自动移动。
+
+> 关于服务器规则：除 ESP 外都会向服务端发送自动化输入，在多数服务器的规则下属于作弊。
 > AimAssist 会显著改变 PvP 对抗的公平性，InvChest 在共享箱子的服务器上等同于快速搬空公共物资。
 > ESP 不发包，但很多服务器把它列为禁止的客户端模组。
 > 请只在你自己开的存档或允许的环境里使用。
 
 ---
 
-## 十一、自行构建
+## 十四、自行构建
 
 ```bash
 ./gradlew build
 ```
 
-产物在 `build/libs/eagle-1.8.0.jar`（`-sources.jar` 是源码包，不用丢进 mods）。
+产物在 `build/libs/eagle-2.4.0.jar`（`-sources.jar` 是源码包，不用丢进 mods）。
 
 开发环境（`./gradlew runClient`）需要联网下载 Minecraft 资源与依赖。
+`launch.bat dev` 就是它的 Windows 包装。
 
 ---
 
-## 十二、项目结构
+## 十五、项目结构
+
+仓库根目录：
+
+```
+D:\Mod\
+├── launch.bat                    一键安装 + 启动脚本（纯 ASCII，见第十一节）
+├── build.gradle / settings.gradle
+├── gradle.properties             版本号与依赖版本都在这里
+├── gradlew / gradlew.bat / gradle/
+└── src/main/                     源码
+```
 
 ```
 src/main/java/com/dmod/eagle/
@@ -807,7 +1113,7 @@ src/main/java/com/dmod/eagle/
 ├── EagleConfig.java              JSON 配置读写与数值钳制
 ├── EagleLogic.java               Eagle：边缘预测 + 潜行判定 + 延迟状态机 + 共享探针
 ├── CpsBoostLogic.java            Eagle：右键提速的节奏调度
-├── SafePadLogic.java             SafePad：目标选择 + 支撑面选择 + 静默旋转放置
+├── AutoArmourLogic.java          AutoArmour：候选筛选 + 材质评分 + 换装点击
 ├── AimAssistLogic.java           AimAssist：目标筛选 + 指数逼近 + 度数换算 + 抖动
 ├── InvChestLogic.java            InvChest：容器识别 + 等级评分 + 取物节奏
 ├── EagleCommands.java            聊天框客户端指令（.inv speed）
@@ -815,9 +1121,18 @@ src/main/java/com/dmod/eagle/
 ├── EspRenderer.java              ESP：自绘透墙名签（AFTER_ENTITIES）
 ├── BlockPlacement.java           共用放置原语：找支撑面、可达性、右键
 ├── BlockInLogic.java             BlockIn：四周目标 + 平滑转头状态机
+├── AccountLogic.java             Account：Session 替换 + 离线 UUID 推导 + 校验
+├── RemoteShopLogic.java          RemoteShop：handler 暂存 + 失效检测 + 界面重建
+├── EagleCommands.java            聊天框客户端指令（.inv speed）
+├── EspLogic.java                 ESP：目标追踪 + 标志位发光 + 低频刷新 + 名签缓存
+├── EspRenderer.java              ESP：自绘透墙名签（AFTER_ENTITIES）
+├── BlockPlacement.java           共用放置原语：找支撑面、可达性、右键
 ├── EagleHud.java                 左上角状态显示（自动换行）
 ├── gui/
 │   ├── EagleScreen.java          ClickGUI：布局、动画、鼠标/滚轮/键盘交互
+│   ├── AccountScreen.java        离线账户编辑页（文本框 + 启用/还原）
+│   ├── ToastManager.java         右下角滑入/停留/滑出的动画提示
+│   ├── DynamicIsland.java        顶部时钟药丸 + 模块开关公告动画
 │   ├── GuiCategory.java          分类与模块/设置注册表
 │   ├── GuiModule.java            模块行（开关、按键标签、展开动画）
 │   ├── GuiSetting.java           设置项（勾选框 / 可拖拽数值）
@@ -826,20 +1141,26 @@ src/main/java/com/dmod/eagle/
     ├── ChatCommandMixin.java     注入 sendChatMessage，拦下客户端指令
     ├── EntityFlagsMixin.java     打开 Entity.getFlag/setFlag 的访问器
     ├── EntityRendererMixin.java  注入 getAndUpdateRenderState，抑制原版名签
+    ├── HandledScreenMixin.java   注入 HandledScreen.close，把关闭改成隐藏
     ├── KeyboardInputMixin.java   注入 KeyboardInput.tick，改写 PlayerInput
     ├── MinecraftClientMixin.java 注入 MinecraftClient.tick，调度 itemUseCooldown
-    └── MouseMixin.java           注入 Mouse.updateMouse，向 cursorDelta 叠加一笔修正
+    ├── MinecraftClientSessionMixin.java  打开 MinecraftClient.session 的写访问
+    ├── MouseMixin.java           注入 Mouse.updateMouse，向 cursorDelta 叠加一笔修正
+    └── MultiplayerScreenMixin.java  注入 MultiplayerScreen.init，追加账户按钮
 ```
 
-模组总共**六处 Mixin**，都只在客户端。
+模组总共**九处 Mixin**，都只在客户端。
 
-* SafePad 与 InvChest 完全不依赖 Mixin，它们走的是原版自己的交互 API。
+* InvChest 与 AutoArmour 完全不依赖 Mixin，它们走的是原版自己的交互 API。
 * 右键提速几乎不依赖——它只是把原版那个私有计数器在正确的时刻放到正确的值。
 * AimAssist 也几乎不依赖——它加的是原版本来就要消费的那笔鼠标位移，
   后面的角度换算、灵敏度曲线、视角应用全部是原版自己做的。
 * 客户端指令是唯一「借」Mixin 干别的事的：它只是让聊天消息在变成数据包之前停下来。
 * ESP 用了两处：一处打开 `getFlag`/`setFlag` 访问器（因为它们都是 `protected`），
   一处抑制原版名签；名字本身是我们自己画的。
+* Account 用了一处：`session` 是 `private final`，写访问需要 `@Mutable @Accessor`。
+* 账户按钮用了一处：只往多人游戏界面追加一个子控件，不碰原版布局。
+* RemoteShop 用了一处：在 `HandledScreen.close()` 的开头把它改成隐藏，不发关闭包。
 
 ---
 

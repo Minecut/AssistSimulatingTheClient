@@ -21,6 +21,9 @@ public final class EagleHud {
     private static final int LINE_HEIGHT = 10;
     private static final String GAP = "   ";
 
+    /** Vertical room reserved for the clock pill at the top of the screen. */
+    private static final int ISLAND_CLEARANCE = 22;
+
     private EagleHud() {
     }
 
@@ -43,8 +46,8 @@ public final class EagleHud {
         List<Text> segments = new ArrayList<>(7);
         segments.add(segment("Eagle", eagleOn, eagleOn && EagleLogic.isEngaged() ? "sneak" : null));
         segments.add(segment("CPS", cpsOn, cpsOn && CpsBoostLogic.isPacing() ? "hold" : null));
-        segments.add(segment("Pad", cfg.safePadEnabled,
-                cfg.safePadEnabled && SafePadLogic.isPlacing() ? "place" : null));
+        segments.add(segment("Armour", cfg.autoArmourEnabled,
+                cfg.autoArmourEnabled && AutoArmourLogic.isEquipping() ? "swap" : null));
         segments.add(segment("Aim", cfg.aimEnabled,
                 cfg.aimEnabled && AimAssistLogic.isAiming() ? "lock" : null));
         segments.add(segment("Inv", cfg.invChestEnabled,
@@ -53,10 +56,15 @@ public final class EagleHud {
                 cfg.espEnabled && EspLogic.isActive() ? Integer.toString(EspLogic.trackedCount()) : null));
         segments.add(segment("BI", cfg.blockInEnabled,
                 cfg.blockInEnabled && BlockInLogic.isWorking() ? "work" : null));
+        segments.add(segment("Name", cfg.customNameEnabled,
+                cfg.customNameEnabled && !cfg.customName.isEmpty() ? cfg.customName : null));
+        segments.add(segment("Shop", cfg.remoteShopEnabled,
+                cfg.remoteShopEnabled && RemoteShopLogic.hasStash() ? "ready" : null));
 
         int maxWidth = Math.max(40, mc.getWindow().getScaledWidth() - MARGIN * 2);
         int x = MARGIN;
-        int y = MARGIN;
+        // Starts below the island so the two never collide on a narrow window.
+        int y = MARGIN + ISLAND_CLEARANCE;
 
         for (Text segment : segments) {
             int width = mc.textRenderer.getWidth(segment);
