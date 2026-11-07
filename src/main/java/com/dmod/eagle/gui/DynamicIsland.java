@@ -7,22 +7,22 @@ import com.dmod.eagle.EagleConfig;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.network.ServerInfo;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
 /**
- * The pill at the top of the screen.
+ * The pill at the top of the screen, which is also the tab panel.
  *
- * <p>Sits idle showing the clock, and swells out to announce a module toggle before settling back.
- * A stadium shape - a rounded rect whose corner radius is half its height - is the same trick the
- * phone version uses, and {@link GuiTheme#roundedRect} already draws it row by row, so no texture or
- * shader is involved.
+ * <p>Three states share one piece of geometry. Idle it is a stadium showing the clock; a module toggle
+ * swells it sideways to announce the change; holding tab grows it into a rounded square carrying the
+ * player list. A stadium is just a rounded rect whose radius is half its height, so raising the height
+ * and easing the radius back to a fixed value turns one into the other without a second shape.
  *
- * <p>Everything animates off two smoothed floats: {@code presence} (how much of the announcement is
- * showing) drives the text crossfade and the width target at once, so the pill and the words can never
- * disagree about which state they are in. The clock string is rebuilt once per second rather than per
- * frame.
+ * <p>All of it animates off smoothed floats - {@code presence} for announcements, {@code tab} for the
+ * expansion - and the width, height and radius targets are recomputed from those every frame, so the
+ * box, its corners and its contents can never disagree about which state they are in.
  *
  * <p>It has two homes for the same reason the toast does: the in-game HUD, and on top of a screen. The
  * clock belongs to the HUD, but an announcement should follow you onto the settings screen, since that
@@ -37,16 +37,31 @@ public final class DynamicIsland {
     private static final int PADDING = 10;
     private static final int MIN_WIDTH = 66;
 
+    /** Corner radius once fully expanded, which reads as a rounded square rather than a pill. */
+    private static final int TAB_RADIUS = 16;
+
     private static final long FLASH_MS = 1700L;
+
+    /** The status line carries a frame rate, so it is rebuilt a few times a second, not per frame. */
+    private static final long STATUS_REFRESH_MS = 250L;
+
+    /** Servers with long hostnames would otherwise push the pill across half the screen. */
+    private static final int MAX_SERVER_CHARS = 22;
+
+    /** List content only appears once the box is this far open, so text never spills outside it. */
+    private static final float CONTENT_THRESHOLD = 0.75F;
 
     private static Text flashText = Text.empty();
     private static long flashUntil;
+
     private static float presence;
+    private static float tab;
     private static float width = -1.0F;
+    private static float height = HEIGHT;
     private static long lastFrameMs;
 
-    private static int lastSecond = -1;
-    private static String clockText = "";
+    private static long statusAt;
+    private static String statusText = "";
 
     private DynamicIsland() {
     }
@@ -106,48 +121,87 @@ public final class DynamicIsland {
         lastFrameMs = now;
 
         presence = GuiTheme.approach(presence, now < flashUntil ? 1.0F : 0.0F, 0.45F, dt);
+        tab = GuiTheme.approach(tab, TabPanel.isOpen(mc) ? 1.0F : 0.0F, 0.55F, dt);
 
-        String clock = clock(mc);
+        String clock = statusLine(mc);
         int clockWidth = mc.textRenderer.getWidth(clock);
         int flashWidth = mc.textRenderer.getWidth(flashText);
 
         float idleWidth = Math.max(MIN_WIDTH, clockWidth + PADDING * 2.0F);
         float peakWidth = Math.max(idleWidth, flashWidth + PADDING * 2.0F);
-        float target = idleWidth + (peakWidth - idleWidth) * presence;
+        float pillWidth = idleWidth + (peakWidth - idleWidth) * presence;
 
-        width = width < 0.0F ? target : GuiTheme.approach(width, target, 0.4F, dt);
+        float targetWidth = pillWidth + (TabPanel.WIDTH - pillWidth) * tab;
+        float targetHeight = HEIGHT + (TabPanel.preferredHeight(mc) - HEIGHT) * tab;
+
+        width = width < 0.0F ? targetWidth : GuiTheme.approach(width, targetWidth, 0.4F, dt);
+        height = GuiTheme.approach(height, targetHeight, 0.4F, dt);
 
         int w = Math.max(24, Math.round(width));
+        int h = Math.max(HEIGHT, Math.round(height));
         int x = (mc.getWindow().getScaledWidth() - w) / 2;
-        int radius = HEIGHT / 2;
-        int textY = TOP + (HEIGHT - 8) / 2;
+        int radius = Math.round(HEIGHT / 2.0F + (TAB_RADIUS - HEIGHT / 2.0F) * tab);
 
-        GuiTheme.roundedRect(context, x + 1, TOP + 2, w, HEIGHT, radius, GuiTheme.SHADOW);
-        GuiTheme.roundedRect(context, x, TOP, w, HEIGHT, radius, 0xF0121216);
+        GuiTheme.roundedRect(context, x + 1, TOP + 2, w, h, radius, GuiTheme.SHADOW);
+        GuiTheme.roundedRect(context, x, TOP, w, h, radius, 0xF0121216);
 
-        // The clock fades out exactly as the announcement fades in, both centred in the pill.
-        if (presence < 0.99F) {
-            context.drawText(mc.textRenderer, clock,
-                    x + (w - clockWidth) / 2, textY,
-                    GuiTheme.withAlpha(0xFFD8D8E2, 1.0F - presence), false);
+        // The pill text steps aside quickly so it cannot overlap the list while the box opens.
+        float pillAlpha = Math.max(0.0F, 1.0F - tab * 1.6F);
+
+        if (pillAlpha > 0.01F) {
+            int textY = TOP + (HEIGHT - 8) / 2;
+
+            if (presence < 0.99F) {
+                context.drawText(mc.textRenderer, clock,
+                        x + (w - clockWidth) / 2, textY,
+                        GuiTheme.withAlpha(0xFFD8D8E2, pillAlpha * (1.0F - presence)), false);
+            }
+
+            if (presence > 0.01F) {
+                context.drawText(mc.textRenderer, flashText,
+                        x + (w - flashWidth) / 2, textY,
+                        GuiTheme.withAlpha(0xFFFFFFFF, pillAlpha * presence), false);
+            }
         }
 
-        if (presence > 0.01F) {
-            context.drawText(mc.textRenderer, flashText,
-                    x + (w - flashWidth) / 2, textY,
-                    GuiTheme.withAlpha(0xFFFFFFFF, presence), false);
+        if (tab > CONTENT_THRESHOLD) {
+            TabPanel.render(context, mc, x, TOP, w, h, (tab - CONTENT_THRESHOLD) / (1.0F - CONTENT_THRESHOLD));
         }
     }
 
-    /** Rebuilt once per second; the formatter is far too expensive to run per frame. */
-    private static String clock(MinecraftClient mc) {
-        LocalTime now = LocalTime.now();
+    /**
+     * The idle line: client name, clock, frame rate, and where we are connected.
+     *
+     * <p>Cached for a quarter second. The clock only needs a second's resolution, but the frame rate
+     * would look frozen if it shared that rate, and formatting this string sixty times a second would
+     * be wasteful for something that barely changes.
+     */
+    private static String statusLine(MinecraftClient mc) {
+        long now = System.currentTimeMillis();
 
-        if (now.getSecond() != lastSecond) {
-            lastSecond = now.getSecond();
-            clockText = now.format(CLOCK);
+        if (!statusText.isEmpty() && now - statusAt < STATUS_REFRESH_MS) {
+            return statusText;
         }
 
-        return clockText;
+        statusAt = now;
+        statusText = "Eagle | "
+                + LocalTime.now().format(CLOCK)
+                + " | " + mc.getCurrentFps()
+                + " | " + serverLabel(mc);
+
+        return statusText;
+    }
+
+    private static String serverLabel(MinecraftClient mc) {
+        ServerInfo info = mc.getCurrentServerEntry();
+
+        if (info != null && info.address != null && !info.address.isBlank()) {
+            String address = info.address;
+            return address.length() <= MAX_SERVER_CHARS
+                    ? address
+                    : address.substring(0, MAX_SERVER_CHARS - 2) + "..";
+        }
+
+        return mc.isInSingleplayer() ? "singleplayer" : "no server";
     }
 }

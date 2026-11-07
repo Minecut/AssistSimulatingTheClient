@@ -6,6 +6,8 @@ import org.slf4j.LoggerFactory;
 
 import com.dmod.eagle.gui.DynamicIsland;
 import com.dmod.eagle.gui.EagleScreen;
+import com.dmod.eagle.gui.ScoreboardPanel;
+import com.dmod.eagle.gui.TitleScreenEffects;
 import com.dmod.eagle.gui.ToastManager;
 
 import net.fabricmc.api.ClientModInitializer;
@@ -15,8 +17,11 @@ import net.fabricmc.fabric.api.client.rendering.v1.HudLayerRegistrationCallback;
 import net.fabricmc.fabric.api.client.rendering.v1.IdentifiedLayer;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.screen.ChatScreen;
+import net.minecraft.client.gui.screen.TitleScreen;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.client.util.InputUtil;
@@ -131,6 +136,8 @@ public class EagleClient implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(RemoteShopLogic::onEndTick);
         ClientTickEvents.END_CLIENT_TICK.register(EspLogic::onEndTick);
         ClientTickEvents.END_CLIENT_TICK.register(BlockInLogic::onEndTick);
+        ClientTickEvents.END_CLIENT_TICK.register(AimAssistLogic::onEndTick);
+        ClientTickEvents.END_CLIENT_TICK.register(SprintLogic::onEndTick);
         ClientTickEvents.END_CLIENT_TICK.register(this::onEndClientTick);
 
         WorldRenderEvents.AFTER_ENTITIES.register(EspRenderer::render);
@@ -150,12 +157,39 @@ public class EagleClient implements ClientModInitializer {
                         Identifier.of(MOD_ID, "island"),
                         (DrawContext context, RenderTickCounter tickCounter) -> DynamicIsland.renderHud(context))));
 
+        HudLayerRegistrationCallback.EVENT.register(drawer -> drawer.addLayer(
+                IdentifiedLayer.of(
+                        Identifier.of(MOD_ID, "scoreboard"),
+                        (DrawContext context, RenderTickCounter tickCounter) ->
+                                ScoreboardPanel.renderInGame(context, MinecraftClient.getInstance()))));
+
         // Screens draw over the HUD, so the notice needs a second home on top of whatever is open.
-        ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) ->
-                ScreenEvents.afterRender(screen).register((rendered, context, mouseX, mouseY, tickDelta) -> {
-                    DynamicIsland.renderScreen(context);
-                    ToastManager.renderScreen(context);
-                }));
+        ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
+            // Chat doubles as the scoreboard's drag handle: the panel is redrawn above it and the
+            // click that lands on the panel is taken away from the chat box.
+            if (screen instanceof ChatScreen) {
+                ScreenMouseEvents.allowMouseClick(screen).register((clicked, mouseX, mouseY, button) ->
+                        button != 0 || !ScoreboardPanel.beginDrag(client, (int) mouseX, (int) mouseY));
+
+                ScreenMouseEvents.allowMouseRelease(screen).register((released, mouseX, mouseY, button) -> {
+                    ScoreboardPanel.endDrag();
+                    return true;
+                });
+            }
+
+            ScreenEvents.afterRender(screen).register((rendered, context, mouseX, mouseY, tickDelta) -> {
+                if (rendered instanceof TitleScreen) {
+                    TitleScreenEffects.render(context, mouseX, mouseY);
+                }
+
+                if (rendered instanceof ChatScreen) {
+                    ScoreboardPanel.renderOverChat(context, client, mouseX, mouseY);
+                }
+
+                DynamicIsland.renderScreen(context);
+                ToastManager.renderScreen(context);
+            });
+        });
 
         LOGGER.info("[Eagle] ready (V = eagle, F6 = auto armour, R = aim assist, N = chest looter, "
                 + "G = esp, K = block in, H = remote shop, Right Shift = GUI)");

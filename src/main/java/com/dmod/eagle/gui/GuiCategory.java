@@ -85,6 +85,12 @@ public final class GuiCategory {
                         number("CPS Max", 1.0D, 20.0D, 1, () -> cfg.cpsMax, v -> cfg.cpsMax = v),
                         bool("Require Block", () -> cfg.cpsRequireBlock, v -> cfg.cpsRequireBlock = v))));
 
+        // ------------------------------------------------------------------ Sprint
+        movement.modules.add(new GuiModule(
+                "Sprint", null,
+                () -> cfg.sprintEnabled, value -> cfg.sprintEnabled = value, null,
+                List.of()));
+
         // ------------------------------------------------------------------ AimAssist
         combat.modules.add(new GuiModule(
                 "AimAssist", EagleClient::keyAim,
@@ -101,7 +107,9 @@ public final class GuiCategory {
                         bool("Click Only", () -> cfg.aimClickOnly, v -> cfg.aimClickOnly = v),
                         bool("Weapon Only", () -> cfg.aimWeaponOnly, v -> cfg.aimWeaponOnly = v),
                         bool("Strafe Increase", () -> cfg.aimStrafeIncrease, v -> cfg.aimStrafeIncrease = v),
-                        bool("Sensitivity Sync", () -> cfg.aimSensitivitySync, v -> cfg.aimSensitivitySync = v))));
+                        bool("Sensitivity Sync", () -> cfg.aimSensitivitySync, v -> cfg.aimSensitivitySync = v),
+                        bool("Auto Attack", () -> cfg.aimAutoAttack, v -> cfg.aimAutoAttack = v),
+                        bool("Team", () -> cfg.aimTeamCheck, v -> cfg.aimTeamCheck = v))));
 
         // ------------------------------------------------------------------ InvChest
         player.modules.add(new GuiModule(

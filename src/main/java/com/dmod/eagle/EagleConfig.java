@@ -65,6 +65,22 @@ public final class EagleConfig {
     /** Draw the clock pill at the top of the screen, with its toggle announcements. */
     public boolean showIsland = true;
 
+    /** Draw the animated ambient effects over the main menu. */
+    public boolean titleEffects = true;
+
+    /** Redraw the sidebar scoreboard in the island's style instead of vanilla's flat rectangles. */
+    public boolean showScoreboard = true;
+
+    /** Scoreboard panel position in scaled pixels; negative means "auto" (top right). */
+    public int scoreboardX = -1;
+
+    public int scoreboardY = -1;
+
+    // ------------------------------------------------------------------ sprint
+
+    /** Sprint whenever the player holds forward. On by default, toggled in the click GUI. */
+    public boolean sprintEnabled = true;
+
     // ------------------------------------------------------------------ right click pacing
 
     /**
@@ -135,6 +151,23 @@ public final class EagleConfig {
 
     /** Player names to leave alone, matched case insensitively. */
     public List<String> aimWhitelist = new ArrayList<>();
+
+    /**
+     * Swing at the tracked target automatically.
+     *
+     * <p>Off by default, and only meaningful while {@link #aimEnabled} is on. This is the one part of
+     * the module that acts rather than assists, so it stays a deliberate opt-in inside the aim
+     * settings rather than something that comes along with the module.
+     */
+    public boolean aimAutoAttack = false;
+
+    /**
+     * Leave alone players whose dyed armour matches ours, treating them as team mates.
+     *
+     * <p>Reads the dye colour on leather armour, which is how most team servers mark sides. Off by
+     * default because it silently ignores players - worth opting into deliberately.
+     */
+    public boolean aimTeamCheck = false;
 
     // ------------------------------------------------------------------ chest looting
 

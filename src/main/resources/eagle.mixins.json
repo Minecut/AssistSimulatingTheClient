@@ -8,11 +8,14 @@
     "EntityFlagsMixin",
     "EntityRendererMixin",
     "HandledScreenMixin",
+    "InGameHudMixin",
     "KeyboardInputMixin",
     "MinecraftClientMixin",
     "MinecraftClientSessionMixin",
     "MouseMixin",
-    "MultiplayerScreenMixin"
+    "MultiplayerScreenMixin",
+    "PlayerListHudAccessor",
+    "PlayerListHudMixin"
   ],
   "injectors": {
     "defaultRequire": 1

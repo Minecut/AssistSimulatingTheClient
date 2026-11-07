@@ -5,7 +5,7 @@
 2.此客户端用于模组测试，不要服务器使用
 3.如果造成封禁后果概不负责
 ------------
-九个模块，各自独立开关：
+九个模块，加上一个常开功能：
 
 | 模块 | 行为 | 开关 | 默认 |
 | --- | --- | --- | --- |
@@ -18,6 +18,7 @@
 | **BlockIn** | 自动在自己四周砌墙把自己围住，平滑转头 | `K` | **关** |
 | **Account** | 换成自定义名字的离线账户 | 多人界面按钮 | **关** |
 | **RemoteShop** | 关掉箱子/商店后不真正关闭，按 H 随时唤回 | `H` | **关** |
+| **Sprint** | 按住前进就疾跑 | GUI（Movement） | 开 |
 
 按 **右 Shift** 打开 ClickGUI，所有开关和参数都能在里面直接调。
 
@@ -123,6 +124,32 @@ handleInputEvents()  // if (useKey.isPressed() && itemUseCooldown == 0 && !isUsi
 > 注意 `wasPressed()` 那条离散按下的路径不受冷却影响，所以快点点右键本来就是想多快有多快。
 > 提速只作用于「按住不放」。
 
+### 5. 强制疾跑
+
+按着**前进**就自动疾跑，不用双击 W，也不用按疾跑键。
+
+开关在 ClickGUI 的 **Movement** 分类里，`Sprint` 那一行；配置文件里是 `sprintEnabled`，默认开。
+**没有快捷键**——它是个常驻便利功能，不值得占一个键位。
+
+它在每个客户端 tick 都重新请求一次疾跑状态，因为原版会在它自己认为不该疾跑的时候把这个状态丢掉：
+
+```java
+if (!cfg.sprintEnabled) return;
+if (!mc.options.forwardKey.isPressed()) return;
+if (player.isSprinting()) return;
+if (player.isSneaking() || player.isUsingItem()) return;
+player.setSprinting(true);
+```
+
+两个状态**故意让开**：
+
+* **潜行优先**。强行穿过潜行会和玩家自己的输入打架，也会直接破坏 Eagle 的边缘保护——那个功能
+  正是靠潜行工作的。
+* **使用物品时跳过**。拉弓和吃东西期间疾跑本身就是非法状态，下一 tick 就会被原版纠正回来。
+
+还有一条：打开任何界面时不动手。按键绑定在开界面时会保留之前的状态，所以按住 W 再按 Esc，
+`isPressed()` 仍然是 true，但那时候玩家并没有在走路。
+
 ---
 
 ## 二、AutoArmour：自动换甲
@@ -194,14 +221,16 @@ if (cfg.autoArmourIdleOnly && (player.isSprinting()
 * **一次只处理一件**，而不是四件一起换。整套换完 4 件约 1.2 秒，
   看起来像一串有节奏的切换，而不是一串爆发包。
 * **打开任何界面时不动手**——那时候 `player.currentScreenHandler` 是别人的，
-  朝玩家的 handler 发包会指错对象。* `autoArmourKeepElytra` 默认开：胸甲位置穿着鞘翅时跳过，不会把你飞行中的鞘翅换成胸甲。
+  朝玩家的 handler 发包会指错对象。
+* `autoArmourKeepElytra` 默认开：胸甲位置穿着鞘翅时跳过，不会把你飞行中的鞘翅换成胸甲。
 * 鞘翅本身也不会被当作候选穿上（它的护甲值是 0）。
 
 ---
 
 ## 三、AimAssist
 
-只做「辅助瞄准」，**不自动攻击**。打不打、什么时候打完全由你控制。
+默认只做「辅助瞄准」，**不自动攻击**——打不打、什么时候打完全由你控制。
+想要它自己挥刀的话，在 AimAssist 的设置里打开 `Auto Attack`（默认关），见第 5 节。
 
 ### 1. 实现路径：修正鼠标向量
 
@@ -286,6 +315,63 @@ step  = 误差角度 × alpha;
 * `aimJitterDegrees` 加一个缓慢漂移的随机偏移：每 150~400 ms 重掷目标点，
   再用指数插值**平滑滑过去**，所以重掷不会表现为抖动
 * `aimStrafeIncrease`：你在移动时按水平速度把辅助速度最多提高 50%
+
+### 5. 自动攻击（默认关）
+
+在 AimAssist 的设置里打开 `Auto Attack`。它是这个模块里**唯一会动手**的部分，
+所以单独做成一个要你主动勾的开关，而不是跟着模块一起开。
+
+跑在**客户端 tick** 上而不是每帧——它依赖的两个量（触及距离、攻击冷却）都是按刻推进的。
+
+四条全部成立才允许挥一次：
+
+```java
+if (!cfg.aimThroughWalls && !self.canSee(target)) return;              // 视线
+double reach = self.getEntityInteractionRange() + target.getWidth() * 0.5D;
+if (distance > reach) return;                                          // 距离
+if (cos < ATTACK_CONE_COS) return;                                     // 准星真的压上去了
+if (self.getAttackCooldownProgress(0.5F) < 1.0F) return;               // 蓄满力
+```
+
+`ATTACK_CONE_COS` 是 **8°**，比辅助自己的捕获锥（默认 90°）紧得多。原因是：
+在偏离准星 40° 的地方挥刀，对服务端来说就是砍空气，所以先让辅助把视角收敛过去，再出手。
+
+`getAttackCooldownProgress` 必须到 1.0 才挥，也就是**等蓄力条满**——这样攻速就是原版的攻速，
+不会出现服务端一眼看出不可能的连续攻击。
+
+`attackEntity` + `swingHand` 是原版 `doAttack()` 的两行，走的是同一条发包路径。
+
+### 6. Team：靠染色识别队友（默认关）
+
+在 AimAssist 的设置里打开 `Team`。打开后，**护甲染色和自己一样的玩家不会被瞄准**。
+
+组队服务器普遍用皮甲染色区分阵营，所以「染色相同」是客户端能拿到的最可靠信号。
+读的是 `DataComponentTypes.DYED_COLOR`——1.21 里皮甲颜色是数据组件，不再是 `DyeableItem`：
+
+```java
+DyedColorComponent dyed = stack.get(DataComponentTypes.DYED_COLOR);
+return dyed == null ? -1 : dyed.rgb();      // 未染色 = -1
+```
+
+判定规则**刻意做得严格**：自己身上**每一处**有颜色的格子都必须和对方完全一致，
+并且至少要有这么一处。也就是说：
+
+* 头盔对、胸甲不对 → **不是**队友，照瞄
+* 自己全身都没染色（没有可比信息）→ **谁都不排除**，照常工作
+* 自己只有一格染色且对方一致 → 是队友
+
+把这条判定抽成了纯函数 `sameColours(int[] mine, int[] theirs)`，所以能直接喂数据验证。
+实测（真实 `ItemStack` + 真实读取路径）：
+
+```
+dyedColor(未染色皮甲) = -1      dyedColor(红色皮甲) = 16711680 (0xFF0000)
+red/red   = true    ← 同队，排除
+red/blue  = false   ← 不同，瞄准
+none/none = false   ← 无信息，不排除
+mixed     = false   ← 头盔对胸甲错，不算队友
+```
+
+默认关，因为它会**静默忽略**一部分玩家，这种事应该手动决定。
 
 ---
 
@@ -765,11 +851,28 @@ if (mc.player.currentScreenHandler != stash) reset();
 
 ---
 
-## 十、灵动岛（顶部时钟）
+## 十、界面动效
 
-屏幕正上方有一个药丸形的小岛，平时显示**当前时间**（`HH:mm:ss`，每秒更新），
-任何模块被开关时它会横向撑开，中间滑出 **`[+] 模块名`**（关闭是 `[-] 模块名`），
-停 1.7 秒再收回。
+### 灵动岛（顶部状态条）
+
+屏幕正上方有一个药丸形的小岛，平时显示一行状态：
+
+```
+Eagle | 21:23:13 | 143 | play.example.com
+```
+
+依次是**客户端名 | 当前时间 | 当前帧率 | 服务器地址**。任何模块被开关时它会横向撑开，
+中间滑出 **`[+] 模块名`**（关闭是 `[-] 模块名`），停 1.7 秒再收回。
+
+* 时间取 `LocalTime`，格式 `HH:mm:ss`
+* 帧率取 `MinecraftClient.getCurrentFps()`
+* 服务器地址取 `getCurrentServerEntry().address`，**超过 22 字符会截断**——否则长域名会把药丸
+  推到半个屏幕宽。单人存档显示 `singleplayer`，没连服务器显示 `no server`
+
+这一行**每 250ms 才重建一次**，不是每帧：时间只需要秒级分辨率，但帧率如果用秒级会看起来像卡住，
+而每帧格式化一次又太浪费。
+
+实测输出：`Eagle | 21:23:13 | 0 | no server`（启动瞬间帧率为 0）。
 
 ### 1. 形状
 
@@ -793,18 +896,20 @@ width    = approach(width, idleWidth + (peakWidth - idleWidth) * presence, 0.4F,
 
 文字是叠在同一中心的：时间按 `1 - presence` 淡出，公告按 `presence` 淡入。
 
-### 3. 时钟每秒才格式化一次
+### 3. 状态行每 250ms 才重建一次
 
 ```java
-if (now.getSecond() != lastSecond) { lastSecond = now.getSecond(); clockText = now.format(CLOCK); }
+if (!statusText.isEmpty() && now - statusAt < STATUS_REFRESH_MS) return statusText;
+statusText = "Eagle | " + LocalTime.now().format(CLOCK) + " | " + mc.getCurrentFps() + " | " + serverLabel(mc);
 ```
 
-`DateTimeFormatter` 每帧跑一次太浪费，缓存成秒级。
+`DateTimeFormatter` 和三次字符串拼接每帧跑一次太浪费，但也不能按秒缓存——帧率会看起来像卡住。
+250ms 是这两者之间的折中。
 
 ### 4. 挂载点
 
 * 游戏内：`HudLayerRegistrationCallback` 的一个独立 layer，和左侧模块列表分开。
-* 界面上：只有公告进行中才画（`presence > 0.02`），所以时钟是「游戏内」的东西，
+* 界面上：只有公告进行中才画（`presence > 0.02`），所以状态行是「游戏内」的东西，
   但你从 ClickGUI 里开关模块时公告会跟过去——那正是需要反馈的地方。
 
 左侧的模块状态列表整体下移了 22px，给顶部的小岛让位。
@@ -816,11 +921,208 @@ if (now.getSecond() != lastSecond) { lastSecond = now.getSecond(); clockText = n
 
 两条路互斥，所以一次开关只会闪一次。
 
+### 主菜单动态效果
+
+标题界面上叠了五层环境动效，全部按屏幕比例和秒级 delta 计算，分辨率和帧率都不影响观感：
+
+| 层 | 效果 | 实现 |
+| --- | --- | --- |
+| 1 | 主题色缓慢呼吸的整屏薄雾 | 一个全屏 `fill`，alpha 约 2~4% |
+| 2 | 一道柔光横带从上往下扫过并循环 | 两个 `fillGradient` 拼出上淡入下淡出 |
+| 3 | 56 颗向上飘的微粒，各自有速度、大小、颜色、相位 | 每颗三个小四边形（外层光晕 + 亮核） |
+| 4 | 上下边缘的暗角，和薄雾反相呼吸 | 两个 `fillGradient` |
+| 5 | 跟随光标的一团柔光 | 三个同心圆角矩形（半径 = 半边长 → 圆形） |
+
+```java
+context.fillGradient(0, top, width, middle, 0x00000000, tint);
+context.fillGradient(0, middle, width, top + bandHeight, tint, 0x00000000);
+```
+
+**为什么叠在上面而不是换掉背景**：想换掉背景得改 `TitleScreen` 自己的渲染路径，
+而这五层的 alpha 都刻意压得很低，按钮的文字完全读得清。要的是气氛，不是新壁纸。
+
+**跟鼠标一起动**：鼠标位置被归一化成 -1..1，再**平滑**逼近，所以整片效果会略微滞后于光标然后
+跟上。这个滞后正是「镜头在漂」和「一层贴纸钉在鼠标上」的区别。两个用途：
+
+* 微粒按 `lookX * 26`、`lookY * 16` 像素位移（视差）
+* 扫光带按 `lookY * 12` 上下浮动
+* 光标本体有一团带拖尾的柔光，位置也做了平滑
+
+微粒用**固定种子**生成，所以每次启动排列都一样，不会每开一次就洗牌。
+总开销约 183 个四边形，全程不分配对象。
+
+挂载点在已有的 `ScreenEvents.afterRender` 回调里加一个 `instanceof TitleScreen` 判断，
+没有为它新增 Mixin。`titleEffects` 设为 `false` 可以整个关掉。
+
+### Tab 面板：灵动岛长成圆角方块
+
+**按住 Tab**，顶部的药丸会横向+纵向撑开成一个圆角正方形，里面是你自己的玩家列表。
+松开就缩回药丸。
+
+三态共用同一套几何：空闲是药丸（半径 = 高度一半），公告时横向撑开，按住 Tab 时长成方块。
+药丸本来就是「半径等于高度一半的圆角矩形」，所以只要把高度抬高、再把半径收回到固定值，
+一个形状就变形出了另一个，不需要两套绘制。
+
+```java
+float targetWidth  = pillWidth + (TabPanel.WIDTH - pillWidth) * tab;
+float targetHeight = HEIGHT + (TabPanel.preferredHeight(mc) - HEIGHT) * tab;
+int radius = Math.round(HEIGHT / 2.0F + (TAB_RADIUS - HEIGHT / 2.0F) * tab);
+```
+
+宽度、高度、圆角三个目标全部由同一个 `tab` 进度算出来，所以框和内容不会各说各话。
+列表内容要等 `tab > 0.75` 才淡入——否则文字会在还没长大的框里溢出。
+
+**只是原版的内容，不是原版的 GUI。** 数据取自 `ClientPlayNetworkHandler.getPlayerList()`，
+名字用 `PlayerListHud.getPlayerName()`（这样队伍颜色、旁观者格式都跟原版一致），
+延迟取 `PlayerListEntry.getLatency()` 显示成文字而不是原版那五张信号格贴图——
+那些贴图绑死了原版的布局尺寸，塞不进这个盒子。
+
+自己画的部分：圆角容器、斑马纹行背景、延迟分色（<80 绿 / <200 黄 / 其余红）、
+自己的行高亮成绿色、服务端的 header/footer 各取第一行。
+
+**原版列表必须被压掉**，而且 `setVisible(false)` 做不到——`PlayerListHud.render` 一进去就
+直接 `collectPlayerEntries()`，从头到尾没看那个 `visible` 字段。所以只能用 Mixin 取消 `render`：
+
+```java
+@Inject(method = "render", at = @At("HEAD"), cancellable = true)
+private void eagle$hideVanillaList(CallbackInfo ci) {
+    if (TabPanel.isOpen(MinecraftClient.getInstance())) ci.cancel();
+}
+```
+
+`TabPanel.isOpen()` 的条件就是「Tab 按着 + 在有世界的游戏里 + 有网络 handler」，
+所以原版列表不会平白消失，只在这块面板真的顶上来的时候让位。
+
+`header`/`footer` 只有 setter 没有 getter，字段还是 private，所以另开了一个 `@Accessor` 接口。
+面板每 200ms 才重建一次条目列表（要分配 + 排序），不是每帧。
+
+### 计分板：同样的风格，完整的内容
+
+右侧的侧边栏计分板换成和灵动岛同一套视觉：圆角深色面板、主题色标题、斑马纹行、
+分数靠右显示成红色。**原版的内容一条不少**——目标名、每一行、每一行的分数都在。
+
+数据全部取自游戏自己的记分板：
+
+```java
+ScoreboardObjective objective = mc.world.getScoreboard()
+        .getObjectiveForSlot(ScoreboardDisplaySlot.SIDEBAR);
+Collection<ScoreboardEntry> entries = scoreboard.getScoreboardEntries(objective);
+```
+
+保留了两条原版规则：**最多 15 行**，**按分数从高到低排序**。过滤掉 `entry.hidden()` 的行。
+
+### 那个「只有分数、没有文字」的 bug
+
+第一版这里是空的，只有右边的数字显示——原因是**行文字根本不在 entry 里**。
+
+服务端的侧边栏条目几乎从不直接把文字写进 entry 名字。它把 owner 设成一个很短的不可见标记
+（比如 `§1`），真正的文字挂在**队伍的前缀和后缀**上。所以原版每一行是这么拼的：
+
+```java
+Team team = scoreboard.getScoreHolderTeam(entry.owner());
+MutableText name = Team.decorateName(team, entry.name());
+```
+
+漏掉 `decorateName` 那一步，`entry.name()` 就是空字符串。而空字符串还会连锁出第二个症状：
+面板宽度是按「最长的一行」算的，名字变空之后宽度就只由标题决定了，于是文字宽度被算成 0，
+数字却被右对齐画了出来——看起来就是「只有积分，没有内容」。
+
+修好之后实测（直接用 `Team` 构造了服务端那种情况）：
+
+```
+decorateName(null, "Hello")                 = [Hello]            ← 无队伍时原样返回，不会 NPE
+decorateName(team("PREFIX " / " SUFFIX"), "") = [PREFIX  SUFFIX]  ← 空名字被前后缀补齐
+```
+
+分数也不再自己拼字符串，而是尊重服务端的 `NumberFormat`（千分位、单位之类）。
+
+### 第二个 bug：`NullPointerException: defaultObj`
+
+第一版我用了 `entry.formatted(objective.getNumberFormat())`，**进服务器直接崩**：
+
+```
+java.lang.NullPointerException: defaultObj
+    at java.util.Objects.requireNonNullElse(Objects.java:314)
+    at net.minecraft.scoreboard.ScoreboardEntry.formatted(...)
+    at com.dmod.eagle.gui.ScoreboardPanel.scoreText(...)
+```
+
+`formatted` 的实际实现是：
+
+```java
+NumberFormat effective = Objects.requireNonNullElse(this.numberFormatOverride, format);
+return effective.format(this.value);
+```
+
+`requireNonNullElse(a, b)` 在 **a 和 b 都是 null** 时抛 `NullPointerException: defaultObj`。
+而「目标没有数字格式」恰恰是绝大多数计分板的常态，entry 通常也没有 override——两个都是空，必崩。
+
+`NumberFormat` 是个接口，没有 `blank()` 之类的兜底实现，所以正确做法是**自己解析优先级再手动兜底**，
+根本不让它走到那个 `requireNonNullElse`：
+
+```java
+NumberFormat format = entry.numberFormatOverride() != null
+        ? entry.numberFormatOverride()
+        : objectiveFormat;
+
+return format == null ? Text.literal(Integer.toString(entry.value())) : format.format(entry.value());
+```
+
+修好后四个用例实测（用真实 `ScoreboardEntry` 和匿名 `NumberFormat` 构造）：
+
+```
+1 无格式（崩溃现场）      = [42]
+2 目标有格式              = [[42]]
+3 entry override 优先     = [[7]]
+4 无队伍的行文字          = [Line text]
+```
+
+> **这次的教训**：上一轮我测的是 `Team.decorateName` 这个**邻近的原语**，没有测
+> `scoreText` 这条**真正会被调用的路径**，所以漏掉了「null 格式」这个必然发生的输入。
+> 现在测的是要跑的那段代码本身，并且喂的是崩溃现场的数据。
+
+### 拖动位置
+
+**打开聊天框就能拖。** 鼠标停在面板上按住左键拖走，松手时位置写进配置。
+
+选聊天框当拖动手柄，是因为它是战斗中最快能打开的界面、而且本来就已经接管了鼠标。
+面板在聊天框打开时会**改画在聊天界面之上**（否则会被聊天背景盖住，看不见就没法拖），
+并带一圈主题色描边提示「现在可以拖」。
+
+拖动逻辑没有用 `ScreenMouseEvents` 的 drag 事件——那个 API 在这一版里根本没有 drag。
+改成：点击用 `allowMouseClick` 判定是否落在面板上（是则吞掉这次点击，不让聊天框拿去做别的事），
+位置更新则挂在已经存在的「每帧带鼠标坐标」的界面渲染钩子上，松手用 `allowMouseRelease`。
+
+```java
+ScreenMouseEvents.allowMouseClick(screen).register((clicked, mouseX, mouseY, button) ->
+        button != 0 || !ScoreboardPanel.beginDrag(client, (int) mouseX, (int) mouseY));
+```
+
+位置存成**缩放后的像素坐标**，每帧再夹回屏幕范围内，所以改 GUI 缩放或窗口尺寸都不会跑到屏幕外。
+`scoreboardX` / `scoreboardY` 为负数表示「自动」（右上角）。
+
+**两个重载都要拦。** `renderScoreboardSidebar` 有两个版本：`(DrawContext, RenderTickCounter)`
+是 HUD 渲染循环里的入口，`(DrawContext, ScoreboardObjective)` 才是真正画的那层。
+只取消其中一个都会留下一条原版侧边栏。
+
+这里用的是 `require = 0`，不是默认的 1。理由：这是个纯外观替换，某个重载如果哪天改名了，
+应该代价是「样式失效」，而不是「游戏起不来」。代价是失败是**静默**的——所以我用反射确认过两个
+handler 都真的挂上了：
+
+```
+InGameHud = [handler$zha000$eagle$hideSidebar handler$zha000$eagle$hideSidebarForObjective]
+```
+
+列表每 100ms 才重建一次。被计时器驱动的计分板每刻都在变，但没有人能读得比这更快，
+而每帧在渲染线程上做一次排序 + 分配没有意义。
+
+`showScoreboard` 设为 `false` 会关闭替换，**原版侧边栏原样回来**——不是把计分板整个藏掉。
+
 ---
 
 ## 十一、安装
 
-推荐直接用 **`launch.bat`**，双击即可：
+推荐直接用 **`launch.bat`**（Windows），双击即可：
 
 ```
 launch.bat        装 jar 到 .minecraft\mods，然后拉起官方启动器
@@ -833,19 +1135,35 @@ launch.bat dev    用开发环境直接启动游戏（不经过启动器）
 > 脚本内容**故意全是 ASCII**：批处理是按字节偏移读取的，UTF-8 文本加上 `chcp 65001`
 > 会让 cmd 在中途丢失位置、把命令行截断。纯 ASCII 绕开整个问题。
 
+非 Windows 平台从源码构建见 [第十五节](#十五命令行构建)。
+
 手动安装：
 
 1. 装好 **Fabric Loader**（≥ 0.16）和一个 **1.21.4** 的档案
 2. 下载 **Fabric API**（1.21.4 版）放进 `mods`
-3. 把 `eagle-2.4.0.jar` 放进 `mods`
+3. 把 `eagle-2.10.0.jar` 放进 `mods`
 4. 启动游戏，进世界后按 **V** 开关 Eagle，**F6** 开关 AutoArmour，**R** 开关 AimAssist，
    **N** 开关 InvChest，**G** 开关 ESP，**K** 开关 BlockIn，**H** 唤回远程商店，
    **右 Shift** 打开 GUI
 
 换离线账户在**多人游戏界面左上角的 `Offline Account` 按钮**里，不在游戏内。
 
-左上角显示 `Eagle ON  CPS ON  Armour OFF  Aim OFF  Inv OFF  ESP OFF  BI OFF  Name OFF` 之类的实时状态，
-一行放不下会自动换行。聊天框里可以用 `.inv speed 0.85` 调 InvChest 的取物节奏。
+左上角是一块**带标题的圆角面板**，标题为 `EagleClient`，下面竖排显示各模块状态：
+
+```
+┌──────────────────┐
+│ EagleClient      │
+│ Eagle ON sneak   │
+│ CPS ON hold      │
+│ Sprint ON        │
+│ Armour OFF       │
+│ ...              │
+└──────────────────┘
+```
+
+面板宽度按**最长那一行**算，所以显示名字、延迟标签时它会自动变宽，不会截断。
+
+聊天框里可以用 `.inv speed 0.85` 调 InvChest 的取物节奏。
 
 ---
 
@@ -865,6 +1183,12 @@ launch.bat dev    用开发环境直接启动游戏（不经过启动器）
   "onlyWhileBridging": false,
   "showHud": true,
   "showIsland": true,
+  "titleEffects": true,
+  "showScoreboard": true,
+  "scoreboardX": -1,
+  "scoreboardY": -1,
+
+  "sprintEnabled": true,
 
   "cpsBoostEnabled": true,
   "cpsMin": 6.0,
@@ -885,6 +1209,8 @@ launch.bat dev    用开发环境直接启动游戏（不经过启动器）
   "aimSensitivitySync": true,
   "aimJitterDegrees": 0.6,
   "aimWhitelist": [],
+  "aimAutoAttack": false,
+  "aimTeamCheck": false,
 
   "invChestEnabled": false,
   "invChestDelayMs": 850,
@@ -933,8 +1259,13 @@ launch.bat dev    用开发环境直接启动游戏（不经过启动器）
 | `releaseDelayMs` | `40` | 边缘消失后延迟多久才解除潜行 |
 | `randomizeDelay` | `true` | 把两个延迟随机化到 `0..设定值`，打散固定节奏 |
 | `onlyWhileBridging` | `false` | 只在手持可放置方块时生效 |
-| `showHud` | `true` | 左上角状态显示 |
-| `showIsland` | `true` | 顶部时钟药丸，以及模块开关时的 `[+]` 公告 |
+| `showHud` | `true` | 左上角圆角面板（EagleClient 标题 + 竖排状态） |
+| `showIsland` | `true` | 顶部药丸：`Eagle | 时间 | 帧率 | 服务器`，以及模块开关时的 `[+]` 公告 |
+| `titleEffects` | `true` | 主菜单上的五层环境动效（含鼠标视差） |
+| `showScoreboard` | `true` | 用同风格面板重画侧边栏计分板；关掉则原版侧边栏回来 |
+| `scoreboardX` | `-1` | 计分板面板的 X 坐标（缩放像素）。**负数 = 自动**（右上角）。打开聊天框拖动即可修改 |
+| `scoreboardY` | `-1` | 同上，Y 坐标 |
+| `sprintEnabled` | `true` | 按住前进即疾跑。GUI 的 Movement → `Sprint` 就是它 |
 
 ### Eagle · 右键提速
 
@@ -963,6 +1294,8 @@ launch.bat dev    用开发环境直接启动游戏（不经过启动器）
 | `aimSensitivitySync` | `true` | 让修正量随鼠标灵敏度缩放，实际度数 = 设定值 × `h`，见上表 |
 | `aimJitterDegrees` | `0.6` | 瞄准点随机漂移的角半径（度）。设为 0 就是完全精准 |
 | `aimWhitelist` | `[]` | 玩家名白名单，大小写不敏感，名单里的人不会被瞄 |
+| `aimAutoAttack` | `false` | 自动挥刀。**默认关**，需要在 AimAssist 设置里打开，且 `aimEnabled` 也要开。见第三节第 5 小节 |
+| `aimTeamCheck` | `false` | 染色护甲与自己相同的玩家不瞄。**默认关**，见第三节第 6 小节 |
 
 ### InvChest
 
@@ -1050,9 +1383,14 @@ launch.bat dev    用开发环境直接启动游戏（不经过启动器）
 **右键提速额外不做**：玩家不按右键时一次都不点。它只是把原版的 5 CPS 提到 6~9，
 放哪个方块、朝哪个方向、什么时候放，仍然全部由你自己决定。
 
-**AimAssist 额外不做**：不自动攻击（没有 KillAura）。它只往你当前正在瞄的方向拉，
+**AimAssist 额外不做**：默认**不自动攻击**。它只往你当前正在瞄的方向拉，
 你的鼠标输入始终是叠加的基底，辅助只是那一点「磁吸」。关掉它的方式是把
 `aimHorizontalSpeed` / `aimVerticalSpeed` 设为 0，或者按 R。
+
+自动攻击是单独一个 `Auto Attack`（默认关，见第三节第 5 小节）。打开之后它只做一件事：
+目标**已经在准星 8° 以内**、在触及距离内、看得见、且蓄力条已满时，替你挥一次。
+它不会主动转向目标去追、不会穿墙砍、也不会加速攻击频率。想回到「只晕不动手」，
+把这个勾去掉就行。
 
 **InvChest 额外不做**：不自动走去开箱子、不自动打开容器、不碰末影箱之外的特殊容器界面
 （工作台、熔炉、漏斗这些一律不动）。它只在你**自己打开了**箱子之后才开始取，
@@ -1072,7 +1410,13 @@ launch.bat dev    用开发环境直接启动游戏（不经过启动器）
 **RemoteShop 额外不做**：不改服务端的容器状态，也不伪造点击。它只是不告诉服务端「我关了」，
 以及用同一个 handler 重建界面。服务端一旦自己关掉容器，它就立刻失效。
 
-**九个模块都不做**：不防摔落伤害、不改位置、不自动攻击、不自动移动。
+**Sprint 额外不做**：不改任何 KeyBinding，不碰腿的移动速度，不伪造状态。它只是在每个 tick
+把玩家本来就能自己做到的那个疾跑状态再请求一次；潜行和使用物品时主动让开。
+
+**Team 额外不做**：不猜队伍、不读服务器插件、不发包。它只比较双方皮甲上的染色数据，
+没有染色就一律不排除。
+
+**十个功能都不做**：不防摔落伤害、不改位置、不自动攻击（除非自己开 `Auto Attack`）、不自动移动。
 
 > 关于服务器规则：除 ESP 外都会向服务端发送自动化输入，在多数服务器的规则下属于作弊。
 > AimAssist 会显著改变 PvP 对抗的公平性，InvChest 在共享箱子的服务器上等同于快速搬空公共物资。
@@ -1081,20 +1425,7 @@ launch.bat dev    用开发环境直接启动游戏（不经过启动器）
 
 ---
 
-## 十四、自行构建
-
-```bash
-./gradlew build
-```
-
-产物在 `build/libs/eagle-2.4.0.jar`（`-sources.jar` 是源码包，不用丢进 mods）。
-
-开发环境（`./gradlew runClient`）需要联网下载 Minecraft 资源与依赖。
-`launch.bat dev` 就是它的 Windows 包装。
-
----
-
-## 十五、项目结构
+## 十四、项目结构
 
 仓库根目录：
 
@@ -1113,6 +1444,7 @@ src/main/java/com/dmod/eagle/
 ├── EagleConfig.java              JSON 配置读写与数值钳制
 ├── EagleLogic.java               Eagle：边缘预测 + 潜行判定 + 延迟状态机 + 共享探针
 ├── CpsBoostLogic.java            Eagle：右键提速的节奏调度
+├── SprintLogic.java              强制疾跑：GUI 可开关，按住前进即疾跑
 ├── AutoArmourLogic.java          AutoArmour：候选筛选 + 材质评分 + 换装点击
 ├── AimAssistLogic.java           AimAssist：目标筛选 + 指数逼近 + 度数换算 + 抖动
 ├── InvChestLogic.java            InvChest：容器识别 + 等级评分 + 取物节奏
@@ -1127,12 +1459,15 @@ src/main/java/com/dmod/eagle/
 ├── EspLogic.java                 ESP：目标追踪 + 标志位发光 + 低频刷新 + 名签缓存
 ├── EspRenderer.java              ESP：自绘透墙名签（AFTER_ENTITIES）
 ├── BlockPlacement.java           共用放置原语：找支撑面、可达性、右键
-├── EagleHud.java                 左上角状态显示（自动换行）
+├── EagleHud.java                 左上角圆角面板：EagleClient 标题 + 竖排状态
 ├── gui/
 │   ├── EagleScreen.java          ClickGUI：布局、动画、鼠标/滚轮/键盘交互
 │   ├── AccountScreen.java        离线账户编辑页（文本框 + 启用/还原）
 │   ├── ToastManager.java         右下角滑入/停留/滑出的动画提示
 │   ├── DynamicIsland.java        顶部时钟药丸 + 模块开关公告动画
+│   ├── TitleScreenEffects.java   主菜单五层环境动效（含鼠标视差）
+│   ├── TabPanel.java             Tab 面板：玩家列表内容与自定义绘制
+│   ├── ScoreboardPanel.java      侧边栏计分板：同风格面板 + 完整内容 + 可拖动
 │   ├── GuiCategory.java          分类与模块/设置注册表
 │   ├── GuiModule.java            模块行（开关、按键标签、展开动画）
 │   ├── GuiSetting.java           设置项（勾选框 / 可拖拽数值）
@@ -1142,14 +1477,17 @@ src/main/java/com/dmod/eagle/
     ├── EntityFlagsMixin.java     打开 Entity.getFlag/setFlag 的访问器
     ├── EntityRendererMixin.java  注入 getAndUpdateRenderState，抑制原版名签
     ├── HandledScreenMixin.java   注入 HandledScreen.close，把关闭改成隐藏
+    ├── InGameHudMixin.java      注入 renderScoreboardSidebar，让位给计分板面板
     ├── KeyboardInputMixin.java   注入 KeyboardInput.tick，改写 PlayerInput
     ├── MinecraftClientMixin.java 注入 MinecraftClient.tick，调度 itemUseCooldown
     ├── MinecraftClientSessionMixin.java  打开 MinecraftClient.session 的写访问
     ├── MouseMixin.java           注入 Mouse.updateMouse，向 cursorDelta 叠加一笔修正
-    └── MultiplayerScreenMixin.java  注入 MultiplayerScreen.init，追加账户按钮
+    ├── MultiplayerScreenMixin.java  注入 MultiplayerScreen.init，追加账户按钮
+    ├── PlayerListHudAccessor.java   打开 PlayerListHud 的 header/footer 读取
+    └── PlayerListHudMixin.java   注入 PlayerListHud.render，让位给灵动岛的面板
 ```
 
-模组总共**九处 Mixin**，都只在客户端。
+模组总共**十二处 Mixin**，都只在客户端。
 
 * InvChest 与 AutoArmour 完全不依赖 Mixin，它们走的是原版自己的交互 API。
 * 右键提速几乎不依赖——它只是把原版那个私有计数器在正确的时刻放到正确的值。
@@ -1161,6 +1499,136 @@ src/main/java/com/dmod/eagle/
 * Account 用了一处：`session` 是 `private final`，写访问需要 `@Mutable @Accessor`。
 * 账户按钮用了一处：只往多人游戏界面追加一个子控件，不碰原版布局。
 * RemoteShop 用了一处：在 `HandledScreen.close()` 的开头把它改成隐藏，不发关闭包。
+* Tab 面板用了两处：一处取消原版列表的渲染，一处只为读 header/footer 开个访问器。
+* 计分板用了一处：取消原版侧边栏的两个渲染重载，改成自己画。
+
+---
+
+## 十五、命令行构建
+
+不需要 IDE，一个 JDK 21 和一个终端就够。仓库自带 Gradle Wrapper，**不用预先安装 Gradle**。
+
+### 1. 环境要求
+
+| 依赖 | 版本 | 说明 |
+| --- | --- | --- |
+| **JDK** | **21** | `build.gradle` 里是 `release = 21`，JDK 17 会在编译阶段直接报错 |
+| **Git** | 任意较新版本 | 只用来 clone |
+| 网络 | 仅首次构建需要 | 要下载 Gradle 本体、Fabric Loom、Minecraft 客户端与映射表 |
+
+确认版本：
+
+```bash
+java -version      # 必须输出 21.x
+```
+
+机器上有多个 JDK 时，用 `JAVA_HOME` 指定比改 `PATH` 可靠：
+
+```bash
+# Linux / macOS
+export JAVA_HOME=/path/to/jdk-21
+
+# Windows PowerShell
+$env:JAVA_HOME = 'C:\Program Files\Java\jdk-21'
+```
+
+### 2. 克隆并构建
+
+```bash
+git clone https://github.com/Minecut/AssistSimulatingTheClient.git
+cd AssistSimulatingTheClient
+
+# Linux / macOS
+./gradlew build
+
+# Windows（cmd 或 PowerShell）
+gradlew.bat build
+```
+
+首次构建会下载并反编译 Minecraft，**几分钟到十几分钟**，取决于网络。之后增量构建一般 30 秒内。
+
+### 3. 产物
+
+```
+build/libs/eagle-<版本>.jar           ← 放进 mods 的就是这个
+build/libs/eagle-<版本>-sources.jar   ← 源码包，不用管
+```
+
+版本号来自 `gradle.properties` 里的 `mod_version`，和文件名对一下就知道了。
+
+装进游戏还需要：
+
+* **Fabric Loader** ≥ 0.16，1.21.4 档案
+* **Fabric API** 1.21.4 版
+
+### 4. 开发运行
+
+```bash
+./gradlew runClient
+```
+
+会启动一个带本模组的客户端，使用仓库内独立的 `run/` 目录，**不碰你正式的存档和配置**。
+Windows 上也可以直接双击根目录的 `launch.bat dev`。
+
+本模组是纯客户端（`"environment": "client"`），`runServer` 没有意义。
+
+### 5. 常用参数
+
+| 命令 | 作用 |
+| --- | --- |
+| `./gradlew build --offline` | 依赖已缓存时不联网构建，适合 CI 和重复构建 |
+| `./gradlew clean build` | 从零重建，怀疑产物过期时用 |
+| `./gradlew build --console=plain` | 关掉进度条，日志更适合贴进 issue |
+| `./gradlew build --warning-mode all` | 展开 Gradle 自身的弃用警告 |
+| `./gradlew --stop` | 停掉后台的 Gradle 守护进程 |
+
+### 6. 常见问题
+
+**`invalid source release: 21` / `Unsupported class file major version`**
+JDK 不是 21。`java -version` 确认，并检查 `JAVA_HOME` 指向的确实是它。
+
+**一直卡在下载 / `Could not resolve ...`**
+首次构建需要能访问 `maven.fabricmc.net`、`libraries.minecraft.net`、Maven Central。
+代理环境下可以给 Gradle 配 `systemProp.https.proxyHost` 等参数到 `~/.gradle/gradle.properties`；
+或者先在有网的机器上构建一次，再把 `~/.gradle/caches` 拷贝过来配合 `--offline`。
+
+**`Failed to load native library 'native-platform.dll'`（Windows）**
+`~/.gradle` 不可写。检查目录权限；被安全软件或「受控文件夹访问」拦住也会这样。
+
+**构建成功但游戏里没有模组**
+确认 `fabric.mod.json` 里的 `minecraft` 依赖是 `~1.21.4`，且启动的是 **1.21.4 的 Fabric 档案**。
+日志里应该能看到 `eagle` 的加载记录。
+
+**改了源码但行为没变**
+`./gradlew clean build`。增量编译偶尔会留下旧 class。
+
+### 7. CI（可选）
+
+GitHub Actions 上自动构建，`.github/workflows/build.yml`：
+
+```yaml
+name: build
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: chmod +x gradlew
+      - run: ./gradlew build --console=plain
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eagle-jar
+          path: build/libs/*.jar
+```
+
+> `.gitignore` 已经排除了 `build/`、`run/`、`.gradle/`、`.idea/`，克隆下来直接构建即可。
 
 ---
 

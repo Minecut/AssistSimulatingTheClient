@@ -5,12 +5,16 @@ import java.util.concurrent.ThreadLocalRandom;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.component.DataComponentTypes;
+import net.minecraft.component.type.DyedColorComponent;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.AxeItem;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.SwordItem;
+import net.minecraft.util.Hand;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
@@ -45,6 +49,19 @@ public final class AimAssistLogic {
 
     /** The band of the target hitbox that gets aimed at: upper chest, on the head line. */
     private static final double AIM_HEIGHT_FRACTION = 0.82D;
+
+    /** Slots the team check compares, in a fixed order so two players line up slot for slot. */
+    private static final EquipmentSlot[] ARMOUR_SLOTS = {
+            EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET};
+
+    /**
+     * How far off the crosshair the target may sit before the auto attack swings.
+     *
+     * <p>Deliberately tighter than the assist's own cone: hitting something 40 degrees off centre
+     * would send a swing at empty air as far as the server is concerned, so the assist gets to finish
+     * converging first.
+     */
+    private static final double ATTACK_CONE_COS = Math.cos(Math.toRadians(8.0D));
 
     private static long lastFrameNanos = 0L;
     private static Entity lastTarget = null;
@@ -200,6 +217,82 @@ public final class AimAssistLogic {
         return new double[] { stepYaw / divisor, stepPitch / (divisor * invert) };
     }
 
+    // ------------------------------------------------------------------ auto attack
+
+    /**
+     * Swings at the target the assist is tracking.
+     *
+     * <p>Runs on the client tick rather than per frame, because everything it depends on - reach and
+     * the attack cooldown - advances in ticks. Four conditions all have to hold before a swing is
+     * allowed through: the crosshair has actually converged on the target, it is visible, it is inside
+     * the interaction range, and the attack is fully charged. Charging to full is what keeps the rate
+     * at vanilla speed instead of something a server would see as impossible.
+     */
+    public static void onEndTick(MinecraftClient mc) {
+        EagleConfig cfg = EagleConfig.get();
+
+        if (!cfg.aimEnabled || !cfg.aimAutoAttack) {
+            return;
+        }
+
+        if (mc == null
+                || mc.player == null
+                || mc.world == null
+                || mc.interactionManager == null
+                || mc.currentScreen != null) {
+            return;
+        }
+
+        ClientPlayerEntity self = mc.player;
+
+        if (!self.isAlive() || self.isSpectator()) {
+            return;
+        }
+
+        // lastTarget is refreshed every frame by mouseCorrection; a stale one is filtered out below.
+        Entity target = lastTarget;
+
+        if (target == null
+                || target.isRemoved()
+                || !target.isAlive()
+                || target.getWorld() != mc.world) {
+            return;
+        }
+
+        if (!cfg.aimThroughWalls && !self.canSee(target)) {
+            return;
+        }
+
+        Vec3d eye = self.getEyePos();
+        Vec3d toTarget = aimPoint(target).subtract(eye);
+        double distance = toTarget.length();
+
+        if (distance < 1.0E-4D) {
+            return;
+        }
+
+        // Vanilla measures reach to the closest point of the hitbox, so half the entity's width on
+        // each horizontal axis is the right allowance.
+        double reach = self.getEntityInteractionRange() + target.getWidth() * 0.5D;
+
+        if (distance > reach) {
+            return;
+        }
+
+        double cos = self.getRotationVec(1.0F).dotProduct(toTarget) / distance;
+
+        if (cos < ATTACK_CONE_COS) {
+            return;
+        }
+
+        if (self.getAttackCooldownProgress(0.5F) < 1.0F) {
+            return;
+        }
+
+        mc.interactionManager.attackEntity(self, target);
+        self.swingHand(Hand.MAIN_HAND);
+    }
+
     // ------------------------------------------------------------------ target selection
 
     private static Entity findTarget(MinecraftClient mc, ClientPlayerEntity self, EagleConfig cfg) {
@@ -228,6 +321,10 @@ public final class AimAssistLogic {
                 continue;
             }
             if (isWhitelisted(cfg, candidate)) {
+                continue;
+            }
+            // Team check: identical dyed armour means a team mate, so leave them out of the pool.
+            if (cfg.aimTeamCheck && isTeamMate(self, candidate)) {
                 continue;
             }
 
@@ -273,6 +370,67 @@ public final class AimAssistLogic {
                 (box.minX + box.maxX) * 0.5D,
                 box.minY + (box.maxY - box.minY) * AIM_HEIGHT_FRACTION,
                 (box.minZ + box.maxZ) * 0.5D);
+    }
+
+    /**
+     * True when the other player is wearing the same dyed armour as us.
+     *
+     * <p>Team servers mark sides by dyeing leather armour, so matching dye is the cheapest reliable
+     * signal available on the client. The rule is strict on purpose: every slot where <em>we</em> have a
+     * colour must match theirs exactly, and at least one such slot has to exist. A player in the right
+     * helmet but the wrong chest is not a team mate, and with no dyed armour on us at all there is
+     * nothing to compare, so nobody gets excluded.
+     *
+     * <p>Undyed armour carries no {@code DYED_COLOR} component, so it reads as -1 - which correctly
+     * fails to match any real colour.
+     */
+    private static boolean isTeamMate(LivingEntity self, LivingEntity other) {
+        return sameColours(armourColours(self), armourColours(other));
+    }
+
+    /** The four dye colours of an entity's armour, in {@link #ARMOUR_SLOTS} order, -1 for undyed. */
+    private static int[] armourColours(LivingEntity entity) {
+        int[] colours = new int[ARMOUR_SLOTS.length];
+
+        for (int i = 0; i < ARMOUR_SLOTS.length; i++) {
+            colours[i] = dyedColor(entity.getEquippedStack(ARMOUR_SLOTS[i]));
+        }
+
+        return colours;
+    }
+
+    /**
+     * The comparison itself, kept separate from the entity plumbing so it can be exercised directly.
+     *
+     * <p>Strict on purpose: every slot where we have a colour must match theirs exactly, and at least
+     * one such slot has to exist. A player in the right helmet but the wrong chest is not a team mate,
+     * and with no dyed armour on us there is nothing to compare, so nobody is excluded.
+     */
+    static boolean sameColours(int[] mine, int[] theirs) {
+        int matched = 0;
+
+        for (int i = 0; i < mine.length; i++) {
+            if (mine[i] < 0) {
+                continue;
+            }
+
+            if (i >= theirs.length || mine[i] != theirs[i]) {
+                return false;
+            }
+
+            matched++;
+        }
+
+        return matched > 0;
+    }
+
+    private static int dyedColor(ItemStack stack) {
+        if (stack.isEmpty()) {
+            return -1;
+        }
+
+        DyedColorComponent dyed = stack.get(DataComponentTypes.DYED_COLOR);
+        return dyed == null ? -1 : dyed.rgb();
     }
 
     private static boolean isWhitelisted(EagleConfig cfg, Entity entity) {
